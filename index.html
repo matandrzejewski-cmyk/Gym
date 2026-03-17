@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black"/>
+<meta name="apple-mobile-web-app-title" content="Gym Logger"/>
+<meta name="theme-color" content="#000000"/>
+<title>Gym Logger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overscroll-behavior:none;background:#000}
+body{-webkit-tap-highlight-color:transparent;font-family:'DM Sans',sans-serif}
+input,button,select,textarea{-webkit-appearance:none;font-family:'DM Sans',sans-serif}
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+input::placeholder,textarea::placeholder{opacity:.35}
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-thumb{background:#4a7c59;border-radius:2px}
+@keyframes pulse-ring{0%{transform:scale(1);opacity:1}100%{transform:scale(2);opacity:0}}
+@keyframes slide-up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes tick{0%,100%{opacity:1}50%{opacity:.6}}
+@keyframes pr-pop{0%{transform:scale(1)}30%{transform:scale(1.2) rotate(-2deg)}60%{transform:scale(1.08)}100%{transform:scale(1)}}
+@keyframes confetti{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(90px) rotate(540deg);opacity:0}}
+@keyframes float-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes typing{0%,60%,100%{opacity:.15}30%{opacity:1}}
+.anim{animation:slide-up .2s ease both}
+.pr-pop{animation:pr-pop .5s ease}
+#root{max-width:600px;margin:0 auto;min-height:100vh}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin:0 2px;animation:typing 1.2s ease infinite}
+.dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script>
+const {useState,useEffect,useRef,useCallback,useMemo,createElement:h,Fragment}=React;
+
+const K={LOGS:"gl_logs",EX:"gl_ex",PLANS:"gl_plans",THEME:"gl_theme",APIKEY:"gl_apikey",GYMS:"gl_gyms",LANG:"gl_lang"};
+const DEFAULT_GYMS=[
+  {id:"waw",label:"Siłownia Warszawa",labelEn:"Gym Warsaw",color:"#3ab8ff",short:"WAW"},
+  {id:"poz",label:"Siłownia Poznań",labelEn:"Gym Poznań",color:"#b06cff",short:"POZ"},
+  {id:"free",label:"Wolny ciężar",labelEn:"Free weights",color:"#4a7c59",short:"FREE",fixed:true}
+];
+const load=k=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):[]}catch{return[]}};
+const loadStr=k=>{try{return localStorage.getItem(k)||""}catch{return""}};
+const save=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{}};
+const saveStr=(k,v)=>{try{localStorage.setItem(k,v)}catch{}};
+
+const DARK={bg:"#000",surface:"#0f0f0f",card:"#141414",border:"#1e1e1e",border2:"#282828",
+  accent:"#4a7c59",accentTxt:"#fff",text:"#f5f5f5",muted:"#444",muted2:"#777",
+  danger:"#c0392b",blue:"#2e7d8a",green:"#4a7c59",aiMsg:"#0a110c",userMsg:"#0a0a14"};
+const LIGHT={bg:"#fff",surface:"#f4f4f0",card:"#fafaf8",border:"#e0e0d8",border2:"#d0d0c8",
+  accent:"#3d6b4a",accentTxt:"#fff",text:"#0a0a0a",muted:"#999",muted2:"#555",
+  danger:"#b83232",blue:"#2c6e7a",green:"#3d6b4a",aiMsg:"#f0f5f1",userMsg:"#f0f0f8"};
+
+// LOCS is now dynamic - loaded from App state, passed via context
+// Keep a fallback for functions that need it before context is ready
+const LOCS_DEFAULT=[
+  {id:"waw",label:"Siłownia Warszawa",color:"#3ab8ff",short:"WAW"},
+  {id:"poz",label:"Siłownia Poznań",color:"#b06cff",short:"POZ"},
+  {id:"free",label:"Wolny ciężar",color:"#4a7c59",short:"FREE",fixed:true}
+];
+const TABS_PL=[
+  {id:"log",icon:"⚡",label:"TRENING"},
+  {id:"ai",icon:"🤖",label:"AI COACH"},
+  {id:"stats",icon:"📈",label:"STATS"},
+  {id:"exercises",icon:"💪",label:"ĆWICZENIA"},
+  {id:"history",icon:"📋",label:"HISTORIA"},
+  {id:"plans",icon:"📝",label:"PLANY"},
+  {id:"settings",icon:"⚙️",label:"USTAW."}
+];
+const TABS_EN=[
+  {id:"log",icon:"⚡",label:"WORKOUT"},
+  {id:"ai",icon:"🤖",label:"AI COACH"},
+  {id:"stats",icon:"📈",label:"STATS"},
+  {id:"exercises",icon:"💪",label:"EXERCISES"},
+  {id:"history",icon:"📋",label:"HISTORY"},
+  {id:"plans",icon:"📝",label:"PLANS"},
+  {id:"settings",icon:"⚙️",label:"SETTINGS"}
+];
+const CATS=["Klatka","Plecy","Barki","Biceps","Triceps","Nogi","Brzuch","Cardio","Inne"];
+const REST_OPTIONS=[30,45,60,90,120,150,180,240,300];
+const restLabel=s=>s<60?s+"s":s%60===0?(s/60)+"min":Math.floor(s/60)+"m"+(s%60)+"s";
+
+const uid=()=>Date.now()+Math.random();
+const mkSet=()=>({id:uid(),reps:"",weight:"",note:"",done:false});
+const mkRow=(loc)=>({id:uid(),exId:null,customName:"",location:loc||"free",sets:[mkSet()],restSeconds:90});
+const mkPEx=()=>({id:uid(),name:"",sets:"4",reps:"8-12",rest:"90",note:"",category:""});
+
+const Ctx=React.createContext({C:DARK,isDark:true,gyms:LOCS_DEFAULT,lang:"pl"});
+const useC=()=>React.useContext(Ctx).C;
+const useGyms=()=>React.useContext(Ctx).gyms;
+const useLang=()=>React.useContext(Ctx).lang;
+const T=(pl,en,lang)=>lang==="en"?en:pl;
+
+const calcVol=sets=>sets.reduce((s,x)=>(parseFloat(x.weight)||0)*(parseInt(x.reps)||0)+s,0);
+const getExName=(row,exercises)=>{
+  if(row.exId){const e=exercises.find(x=>x.id===row.exId);return e?e.name:row.customName||"";}
+  return row.customName||"";
+};
+const getPR=(exId,logs,loc)=>{
+  let pr=0;
+  logs.forEach(log=>{ (log.rows||[]).forEach(row=>{
+    if(row.exId!==exId)return;
+    if(loc&&loc!=="all"&&row.location!==loc)return;
+    (row.sets||[]).forEach(s=>{const w=parseFloat(s.weight)||0;if(w>pr)pr=w;});
+  });});
+  return pr;
+};
+const getProgress=(exId,logs,loc)=>{
+  const pts=[];
+  logs.forEach(log=>{ (log.rows||[]).forEach(row=>{
+    if(row.exId!==exId)return;
+    if(loc&&loc!=="all"&&row.location!==loc)return;
+    const maxW=Math.max(0,...(row.sets||[]).map(s=>parseFloat(s.weight)||0));
+    if(maxW>0)pts.push({x:new Date(log.date).getTime(),date:log.date,y:maxW,sets:row.sets||[]});
+  });});
+  return pts.sort((a,b)=>a.x-b.x);
+};
+
+// ── AI ────────────────────────────────────────────────────────────────────────
+async function callAI(apiKey,messages,system){
+  const r=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{"Content-Type":"application/json","x-api-key":apiKey,
+      "anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:600,system,messages})
+  });
+  if(!r.ok){const e=await r.json();throw new Error((e.error&&e.error.message)||"Błąd API");}
+  const d=await r.json();
+  return d.content[0].text;
+}
+async function aiFirstSet(apiKey,exName,history,loc,planReps){
+  if(!history||!history.length)return null;
+  const prev=history.slice(-4).map(p=>p.date+": "+p.y+"kg ("+p.sets.map(s=>s.weight+"x"+s.reps).join(", ")+")").join(" | ");
+  const locLabel=(LOCS_DEFAULT.find(l=>l.id===loc)||LOCS_DEFAULT[2]).label;
+  const repsInfo=planReps?"\nDocelowy zakres powt: "+planReps:"";
+  return callAI(apiKey,[{role:"user",content:"Cwiczenie: "+exName+"\nLokalizacja: "+locLabel+repsInfo+"\nOstatnie sesje: "+prev}],
+    "Jestes trenerem. Odpowiadaj po polsku. JEDNO zdanie: konkretna sugestia ciezaru na pierwsza serie dopasowan do docelowego zakresu powtorzen. Format: Zacznij od Xkg x Y powt. (uzasadnienie).");
+}
+async function aiSetComment(apiKey,exName,weight,reps,history,prevSets,setNum,planReps){
+  const prev=history.slice(-3).map(p=>p.date+": "+p.y+"kg").join(", ");
+  const today=prevSets.length>0?prevSets.map((s,i)=>"S"+(i+1)+": "+s.weight+"x"+s.reps).join(", "):"pierwsza seria";
+  const repsInfo=planReps?"\nDocelowy zakres powtorzen z planu: "+planReps:"";
+  return callAI(apiKey,[{role:"user",content:"Cwiczenie: "+exName+"\nSeria "+setNum+": "+weight+"kg x "+reps+" powt.\nDzis: "+today+"\nPR historia: "+(prev||"brak")+repsInfo}],
+    "Jestes trenerem. Po polsku. Max 2 zdania. Skomentuj serie i podaj KONKRETNA sugestie na nastepna serie (ile kg x ile powt) w zakresie "+(planReps||"8-12")+" powtorzen.");
+}
+function extractPlan(text){
+  const m=text.match(/```json([\s\S]*?)```/);
+  if(m){try{return JSON.parse(m[1].trim());}catch{}}
+  return null;
+}
+
+// ── Base UI ───────────────────────────────────────────────────────────────────
+function Btn({children,onClick,variant,small,full,style,disabled}){
+  const C=useC();
+  const v={primary:{background:C.accent,color:C.accentTxt,border:"none"},
+    ghost:{background:"transparent",color:C.text,border:"1px solid "+C.border2},
+    danger:{background:"transparent",color:C.danger,border:"1px solid "+C.danger},
+    muted:{background:C.surface,color:C.muted2,border:"1px solid "+C.border}};
+  return h("button",{onClick:disabled?undefined:onClick,style:Object.assign({
+    fontWeight:600,fontSize:small?12:14,borderRadius:7,cursor:disabled?"not-allowed":"pointer",
+    padding:small?"6px 12px":"10px 20px",transition:"all .15s",opacity:disabled?.4:1,
+    width:full?"100%":"auto"},v[variant||"primary"],style||{})},children);
+}
+function Inp({value,onChange,placeholder,type,style,onKeyDown,rows}){
+  const C=useC();
+  const base={fontSize:14,background:C.surface,border:"1px solid "+C.border,borderRadius:7,
+    color:C.text,padding:"8px 12px",outline:"none",width:"100%",resize:"none"};
+  if(rows)return h("textarea",{value,onChange:e=>onChange(e.target.value),placeholder,onKeyDown,rows,style:Object.assign({},base,style||{})});
+  return h("input",{type:type||"text",value,onChange:e=>onChange(e.target.value),placeholder,onKeyDown,style:Object.assign({},base,style||{})});
+}
+function Sel({value,onChange,options,style}){
+  const C=useC();
+  return h("select",{value,onChange:e=>onChange(e.target.value),
+    style:Object.assign({fontSize:13,background:C.surface,border:"1px solid "+C.border,borderRadius:7,
+      color:C.text,padding:"8px 10px",outline:"none",width:"100%"},style||{})},
+    options.map(o=>h("option",{key:o.v,value:o.v,style:{background:C.surface,color:C.text}},o.l))
+  );
+}
+const Lbl=({children})=>{const C=useC();return h("div",{style:{fontSize:10,letterSpacing:".12em",color:C.muted,textTransform:"uppercase",marginBottom:5}},children);};
+const Hr=({m})=>{const C=useC();return h("div",{style:{borderTop:"1px solid "+C.border,margin:m||"16px 0"}});};
+const Tag=({color,children,small})=>h("span",{style:{fontWeight:600,fontSize:small?10:11,color,background:color+"22",border:"1px solid "+color+"44",borderRadius:4,padding:small?"2px 6px":"3px 8px"}},children);
+function Card({children,style,onClick,className}){
+  const C=useC();
+  return h("div",{onClick,className,style:Object.assign({background:C.card,borderRadius:12,border:"1px solid "+C.border2,padding:16},style||{})},children);
+}
+function LocPicker({value,onChange}){
+  const C=useC();
+  const gyms=useGyms();
+  const lang=useLang();
+  return h("div",{style:{display:"flex",gap:6}},gyms.map(l=>h("button",{key:l.id,onClick:()=>onChange(l.id),style:{fontWeight:600,fontSize:11,cursor:"pointer",borderRadius:6,padding:"5px 8px",background:value===l.id?l.color+"22":"transparent",color:value===l.id?l.color:C.muted,border:"1px solid "+(value===l.id?l.color:C.border),flex:1,textAlign:"center"}},(lang==="en"&&l.labelEn)||l.label)));
+}
+
+// ── Sparkline ─────────────────────────────────────────────────────────────────
+function Sparkline({data,color}){
+  if(!data||data.length<2)return null;
+  const W=300,H=60,pad=8;
+  const xs=data.map(d=>d.x),ys=data.map(d=>d.y);
+  const minX=Math.min.apply(null,xs),maxX=Math.max.apply(null,xs);
+  const minY=Math.min.apply(null,ys)*.95,maxY=Math.max.apply(null,ys)*1.05;
+  const px=x=>pad+(x-minX)/(maxX-minX||1)*(W-2*pad);
+  const py=y=>H-pad-(y-minY)/(maxY-minY||1)*(H-2*pad);
+  const pts=data.map(d=>px(d.x)+","+py(d.y)).join(" ");
+  const area="M"+px(xs[0])+","+H+" "+data.map(d=>"L"+px(d.x)+","+py(d.y)).join(" ")+" L"+px(xs[xs.length-1])+","+H+" Z";
+  const gid="g"+(color||"").replace(/[^a-z0-9]/gi,"x");
+  return h("svg",{width:"100%",viewBox:"0 0 "+W+" "+H,preserveAspectRatio:"none",style:{overflow:"visible"}},
+    h("defs",null,h("linearGradient",{id:gid,x1:"0",x2:"0",y1:"0",y2:"1"},
+      h("stop",{offset:"0%",stopColor:color,stopOpacity:".3"}),h("stop",{offset:"100%",stopColor:color,stopOpacity:"0"}))),
+    h("path",{d:area,fill:"url(#"+gid+")"}),
+    h("polyline",{points:pts,fill:"none",stroke:color,strokeWidth:"2",strokeLinejoin:"round",strokeLinecap:"round"}),
+    data.map((d,i)=>h("circle",{key:i,cx:px(d.x),cy:py(d.y),r:3,fill:color,stroke:"transparent",strokeWidth:2}))
+  );
+}
+
+// ── PR Banner ─────────────────────────────────────────────────────────────────
+function PRBanner({exName,weight,onClose}){
+  const C=useC();
+  useEffect(()=>{const t=setTimeout(onClose,4000);return()=>clearTimeout(t);},[]);
+  const cols=["#4a7c59","#3ab8ff","#c0392b","#b06cff","#f0f0f0","#f5a623"];
+  return h("div",{style:{position:"fixed",top:"calc(env(safe-area-inset-top,0px) + 70px)",left:"50%",transform:"translateX(-50%)",zIndex:1000,width:"90%",maxWidth:400}},
+    h("div",{className:"pr-pop",style:{background:"linear-gradient(135deg,#0a1a0f,#051008)",border:"2px solid "+C.accent,borderRadius:16,padding:"20px 24px",textAlign:"center",boxShadow:"0 0 40px "+C.accent+"55",position:"relative",overflow:"hidden"}},
+      cols.map((col,i)=>h("div",{key:i,style:{position:"absolute",top:-10,left:(10+i*15)+"%",width:7,height:7,borderRadius:2,background:col,animation:"confetti "+(0.8+i*.1)+"s ease "+(i*.08)+"s forwards"}})),
+      h("div",{style:{fontSize:36,marginBottom:6}},"🏆"),
+      h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:26,color:C.accent,letterSpacing:".06em",marginBottom:4}},"NOWY REKORD!"),
+      h("div",{style:{fontWeight:600,fontSize:15,color:"#f0f0f0",marginBottom:4}},exName),
+      h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:38,color:"#fff"}},weight+" kg"),
+      h("button",{onClick:onClose,style:{marginTop:10,background:"transparent",border:"1px solid "+C.accent+"55",color:C.accent,borderRadius:6,padding:"4px 14px",cursor:"pointer",fontSize:12}},"Zamknij")
+    )
+  );
+}
+
+// ── Rest Timer ────────────────────────────────────────────────────────────────
+function RestTimer({autoStartRef}){
+  const C=useC();
+  const [preset,setPreset]=useState(90);
+  const [rem,setRem]=useState(90);
+  const [running,setRunning]=useState(false);
+  const [finished,setFinished]=useState(false);
+  const [expanded,setExpanded]=useState(false);
+  const ref=useRef(null);
+  const go=useCallback(()=>{setFinished(false);setRunning(true);},[]);
+  const pause=()=>setRunning(false);
+  const reset=useCallback(()=>{setRunning(false);setFinished(false);setRem(preset);},[preset]);
+  useEffect(()=>{setRem(preset);setRunning(false);setFinished(false);},[preset]);
+  useEffect(()=>{
+    if(running){ref.current=setInterval(()=>setRem(r=>{if(r<=1){clearInterval(ref.current);setRunning(false);setFinished(true);
+            if(navigator.vibrate)navigator.vibrate([300,100,300,100,500]);
+            try{const ac=new(window.AudioContext||window.webkitAudioContext)();const bk=(f,s,d)=>{const o=ac.createOscillator(),g=ac.createGain();o.connect(g);g.connect(ac.destination);o.frequency.value=f;g.gain.setValueAtTime(0.4,ac.currentTime+s);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+s+d);o.start(ac.currentTime+s);o.stop(ac.currentTime+s+d+0.05);};bk(880,0,.15);bk(880,.2,.15);bk(1100,.4,.3);}catch(e){}
+            return 0;}return r-1;}),1000);}
+    else clearInterval(ref.current);
+    return()=>clearInterval(ref.current);
+  },[running]);
+  useEffect(()=>{
+    if(autoStartRef)autoStartRef.current=(seconds)=>{
+      const s=seconds||preset;
+      setPreset(s);setRem(s);setFinished(false);setRunning(true);setExpanded(false);
+    };
+  },[autoStartRef,preset]);
+  const pct=rem/preset,R=18,circ=2*Math.PI*R;
+  const mm=String(Math.floor(rem/60)).padStart(2,"0"),ss=String(rem%60).padStart(2,"0");
+  const col=finished?C.danger:running?C.accent:C.muted2;
+  return h("div",{style:{background:C.card,border:"1px solid "+(finished?C.danger:running?C.accent:C.border2),borderRadius:12,padding:expanded?"14px 16px":"8px 14px",transition:"border-color .3s",marginBottom:16}},
+    h("div",{style:{display:"flex",alignItems:"center",gap:10}},
+      h("div",{style:{position:"relative",width:42,height:42,flexShrink:0}},
+        h("svg",{width:42,height:42,style:{transform:"rotate(-90deg)"}},
+          h("circle",{cx:21,cy:21,r:R,fill:"none",stroke:C.border,strokeWidth:3.5}),
+          h("circle",{cx:21,cy:21,r:R,fill:"none",stroke:col,strokeWidth:3.5,strokeDasharray:(circ*pct)+" "+circ,strokeLinecap:"round",style:{transition:"stroke-dasharray .9s linear,stroke .3s"}})
+        ),
+        finished&&h("div",{style:{position:"absolute",inset:0,borderRadius:"50%",border:"2px solid "+C.danger,animation:"pulse-ring 1s ease-out infinite"}}),
+        h("div",{style:{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13}},"⏱")
+      ),
+      h("div",{style:{flex:1}},
+        h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:col,lineHeight:1,animation:running?"tick 1s ease infinite":"none"}},mm+":"+ss),
+        h("div",{style:{fontSize:10,color:C.muted,letterSpacing:".08em",textTransform:"uppercase"}},finished?"✓ Gotowy!":running?"Odpoczywasz…":"Przerwa między seriami")
+      ),
+      h("div",{style:{display:"flex",gap:5,alignItems:"center"}},
+        !running?h("button",{onClick:go,style:{fontWeight:700,fontSize:12,background:C.accent,color:C.accentTxt,border:"none",borderRadius:6,padding:"7px 13px",cursor:"pointer"}},"▶ START")
+                :h("button",{onClick:pause,style:{fontWeight:700,fontSize:12,background:"transparent",color:C.text,border:"1px solid "+C.border2,borderRadius:6,padding:"7px 11px",cursor:"pointer"}},"⏸"),
+        h("button",{onClick:reset,style:{fontSize:13,background:"transparent",color:C.muted2,border:"1px solid "+C.border,borderRadius:6,padding:"7px 9px",cursor:"pointer"}},"↺"),
+        h("button",{onClick:()=>setExpanded(e=>!e),style:{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:13,padding:"0 3px"}},expanded?"▲":"▼")
+      )
+    ),
+    expanded&&h("div",{style:{marginTop:12}},
+      h(Lbl,null,"Szybki wybór"),
+      h("div",{style:{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}},
+        REST_OPTIONS.map(p=>h("button",{key:p,onClick:()=>setPreset(p),style:{fontWeight:600,fontSize:11,background:preset===p?C.accent:C.surface,color:preset===p?C.accentTxt:C.muted2,border:"1px solid "+(preset===p?C.accent:C.border),borderRadius:6,padding:"4px 11px",cursor:"pointer"}},restLabel(p))),
+        h(Inp,{type:"number",value:preset,onChange:v=>setPreset(Number(v)),placeholder:"sek",style:{width:70,padding:"4px 8px",fontSize:12}})
+      )
+    )
+  );
+}
+
+// ── ExSelector ────────────────────────────────────────────────────────────────
+function ExSelector({exercises,value,onChange,onSelect}){
+  const C=useC();
+  const [open,setOpen]=useState(false);
+  const filtered=exercises.filter(e=>e.name.toLowerCase().includes((value||"").toLowerCase())).slice(0,6);
+  return h("div",{style:{position:"relative"}},
+    h(Inp,{value,onChange:v=>{onChange(v);setOpen(true)},placeholder:"Nazwa lub wybierz z biblioteki…",onKeyDown:e=>e.key==="Escape"&&setOpen(false),style:{padding:"7px 10px"}}),
+    open&&filtered.length>0&&h("div",{style:{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,background:C.card,border:"1px solid "+C.border2,borderRadius:8,zIndex:200,overflow:"hidden",boxShadow:"0 8px 24px #0008"}},
+      filtered.map(e=>h("div",{key:e.id,onMouseDown:()=>{onSelect(e.id);setOpen(false)},style:{fontSize:13,color:C.text,padding:"9px 12px",cursor:"pointer",borderBottom:"1px solid "+C.border,display:"flex",justifyContent:"space-between"}},
+        h("span",null,e.name),h("span",{style:{fontSize:10,color:C.muted}},e.category||"")))
+    )
+  );
+}
+
+// ── Start Screen ──────────────────────────────────────────────────────────────
+function StartScreen({plans,exercises,onStartFree,onStartPlan}){
+  const lang=useLang();
+  const gyms=useGyms();
+  const S=(p,e)=>lang==="en"?e:p;
+  const C=useC();
+  const [sel,setSel]=useState(null);
+  const today=new Date().toLocaleDateString("pl-PL",{weekday:"long",day:"numeric",month:"long"});
+  return h("div",{style:{display:"flex",flexDirection:"column",gap:14},className:"anim"},
+    h("div",null,
+      h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:32,color:C.accent,letterSpacing:".05em"}},S("NOWY TRENING","NEW WORKOUT")),
+      h("div",{style:{fontSize:13,color:C.muted}},today)
+    ),
+    h("div",{onClick:onStartFree,style:{background:C.card,border:"1px solid "+C.border2,borderRadius:14,padding:"18px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:16}},
+      h("div",{style:{fontSize:34}},"🏋️"),
+      h("div",{style:{flex:1}},
+        h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:C.text,letterSpacing:".04em"}},S("TRENING WOLNY","FREE WORKOUT")),
+        h("div",{style:{fontSize:12,color:C.muted,marginTop:2}},S("Dodaj ćwiczenia ręcznie","Add exercises manually"))
+      ),
+      h("div",{style:{color:C.accent,fontSize:22}},"→")
+    ),
+    plans.length>0&&h("div",{style:{fontSize:11,color:C.muted,letterSpacing:".1em",textTransform:"uppercase",textAlign:"center",marginTop:4}},"— lub wybierz plan —"),
+    plans.map(p=>h("div",{key:p.id,style:{background:C.card,border:"1px solid "+(sel===p.id?C.accent:C.border2),borderRadius:14,overflow:"hidden",cursor:"pointer"},onClick:()=>setSel(sel===p.id?null:p.id)},
+      h("div",{style:{padding:"14px 18px",display:"flex",alignItems:"center",gap:14}},
+        h("div",{style:{fontSize:28}},"📋"),
+        h("div",{style:{flex:1}},
+          h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:18,color:C.text,letterSpacing:".04em"}},p.name),
+          h("div",{style:{fontSize:12,color:C.muted,marginTop:2}},(p.exercises||[]).length+" ćwiczeń"+(p.days?" · "+p.days:""))
+        ),
+        h("div",{style:{color:sel===p.id?C.accent:C.muted,fontSize:14,transition:"transform .2s",transform:sel===p.id?"rotate(90deg)":"none"}},"▶")
+      ),
+      sel===p.id&&h("div",{style:{padding:"0 18px 14px"}},
+        h("div",{style:{display:"flex",flexDirection:"column",gap:5,marginBottom:12}},
+          (p.exercises||[]).map((ex,i)=>{
+            const found=exercises.find(e=>e.name.toLowerCase()===(ex.name||"").toLowerCase());
+            const gymObj=(gyms||LOCS_DEFAULT).find(l=>l.id==="free")||LOCS_DEFAULT[2];
+            return h("div",{key:i,style:{display:"flex",alignItems:"center",gap:10,background:C.surface,borderRadius:8,padding:"8px 12px"}},
+              h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:15,color:C.accent,minWidth:20}},i+1),
+              h("div",{style:{flex:1}},
+                h("div",{style:{fontSize:13,color:C.text,fontWeight:600}},ex.name||"—"),
+                h("div",{style:{fontSize:11,color:C.muted}},[ex.sets&&ex.sets+"x",ex.reps&&ex.reps+" powt",ex.rest&&restLabel(parseInt(ex.rest)||90)+" przerwy"].filter(Boolean).join(" · "))
+              ),
+              found&&h("span",{style:{fontSize:10,color:C.green,background:C.green+"22",borderRadius:4,padding:"2px 6px",border:"1px solid "+C.green+"44"}},"✓")
+            );
+          })
+        ),
+        h("button",{onClick:e=>{e.stopPropagation();onStartPlan(p);},style:{width:"100%",fontWeight:700,fontSize:15,background:C.accent,color:C.accentTxt,border:"none",borderRadius:10,padding:"13px 20px",cursor:"pointer"}},S("⚡ Rozpocznij ten trening","⚡ Start this workout"))
+      )
+    )),
+    plans.length===0&&h("div",{style:{background:C.surface,borderRadius:12,padding:16,fontSize:13,color:C.muted,textAlign:"center"}},S("Brak planów. Stwórz plan w zakładce 📝 lub użyj AI Coach.","No plans yet. Create one in 📝 or use AI Coach."))
+  );
+}
+
+// ── Log Tab ───────────────────────────────────────────────────────────────────
+function LogTab(p){
+  const C=useC();
+  const {onSave,exercises,logs,apiKey,onBack,
+    date,setDate,wname,setWname,loc,setLoc,rows,setRows,
+    summary,setSummary,prEvent,setPrEvent,
+    setComments,setSetComments,loadingCmt,setLoadingCmt,
+    collapsed,setCollapsed,showHist,setShowHist,
+    firstSug,setFirstSug,loadingFirstSug,setLoadingFirstSug,
+    dismissedSug,setDismissedSug}=p;
+
+  const autoStartRef=useRef(null);
+  const gyms=useGyms();
+  const lang=useLang();
+  const S=(p,e)=>lang==="en"?e:p;
+
+  // Auto-fetch first-set suggestions when rows with exId are loaded (e.g. from plan)
+  useEffect(()=>{
+    rows.forEach(row=>{
+      if(row.exId&&apiKey&&!firstSug[row.id]&&!loadingFirstSug[row.id])
+        fetchFirstSug(row.id,row.exId,row.location);
+    });
+  },[rows.map(r=>r.id+":"+(r.exId||"")).join(","),apiKey]);
+
+  const updSet=(rid,sid,f,v)=>setRows(r=>r.map(x=>x.id===rid?{...x,sets:x.sets.map(s=>s.id===sid?{...s,[f]:v}:s)}:x));
+  const addSet=rid=>setRows(r=>r.map(x=>x.id===rid?{...x,sets:[...x.sets,mkSet()]}:x));
+  const delSet=(rid,sid)=>setRows(r=>r.map(x=>x.id===rid?{...x,sets:x.sets.filter(s=>s.id!==sid)}:x));
+  const updRow=(rid,patch)=>setRows(r=>r.map(x=>x.id===rid?{...x,...patch}:x));
+  const addRow=()=>setRows(r=>[...r,mkRow(loc)]);
+  const delRow=rid=>setRows(r=>r.filter(x=>x.id!==rid));
+
+  const fetchFirstSug=async(rowId,exId,location)=>{
+    if(!apiKey||!exId||firstSug[rowId]||loadingFirstSug[rowId])return;
+    const hist=getProgress(exId,logs,location);
+    const ex=exercises.find(e=>e.id===exId);
+    if(!ex)return;
+    const targetRow=rows.find(r=>r.id===rowId);
+    const planReps=targetRow&&targetRow.planReps||null;
+    if(!hist.length){setFirstSug(prev=>({...prev,[rowId]:"Pierwsze podejście! Zacznij od ciężaru który możesz wykonać technicznie na "+(planReps||"10-12")+" powtórzeń."}));return;}
+    setLoadingFirstSug(prev=>({...prev,[rowId]:true}));
+    try{const s=await aiFirstSet(apiKey,ex.name,hist,location,planReps);if(s)setFirstSug(prev=>({...prev,[rowId]:s}));}
+    catch(e){setFirstSug(prev=>({...prev,[rowId]:"Błąd AI: "+e.message}));}
+    setLoadingFirstSug(prev=>({...prev,[rowId]:false}));
+  };
+
+  const handleCheck=async(rowId,setId)=>{
+    const currentRow=rows.find(x=>x.id===rowId);if(!currentRow)return;
+    const si=currentRow.sets.findIndex(x=>x.id===setId);if(si<0)return;
+    const currentSet=currentRow.sets[si];
+    const wasAlreadyDone=currentSet.done;
+    setRows(prev=>prev.map(r=>r.id!==rowId?r:{...r,sets:r.sets.map(s=>s.id!==setId?s:{...s,done:!s.done})}));
+    if(wasAlreadyDone)return;
+    // auto-start timer
+    if(autoStartRef.current)autoStartRef.current(currentRow.restSeconds||90);
+    if(!apiKey)return;
+    const exName=getExName(currentRow,exercises);if(!exName)return;
+    const key=rowId+"_"+setId;if(setComments[key])return;
+    if(!currentSet.weight||!currentSet.reps){setSetComments(prev=>({...prev,[key]:"Wpisz ciężar i powtórzenia, żeby AI mógł skomentować serię."}));return;}
+    const hist=currentRow.exId?getProgress(currentRow.exId,logs,currentRow.location):[];
+    const prevSets=currentRow.sets.slice(0,si).filter(x=>x.weight&&x.reps);
+    setLoadingCmt(prev=>({...prev,[key]:true}));
+    const planReps2=currentRow.planReps||null;
+    try{const cmt=await aiSetComment(apiKey,exName,currentSet.weight,currentSet.reps,hist,prevSets,si+1,planReps2);setSetComments(prev=>({...prev,[key]:cmt}));}
+    catch(e){setSetComments(prev=>({...prev,[key]:"Błąd AI: "+e.message}));}
+    setLoadingCmt(prev=>({...prev,[key]:false}));
+  };
+
+  const handleSave=()=>{
+    const filled=rows.filter(r=>getExName(r,exercises).trim()||r.sets.some(s=>s.reps||s.weight));
+    if(!filled.length)return;
+    filled.forEach(row=>{
+      if(!row.exId)return;
+      const oldPR=getPR(row.exId,logs,row.location);
+      const newMax=Math.max(0,...row.sets.map(s=>parseFloat(s.weight)||0));
+      if(newMax>oldPR&&newMax>0)setPrEvent({exName:getExName(row,exercises),weight:newMax});
+    });
+    const n=wname||(()=>{const d=new Date(date);return"Trening "+d.toLocaleDateString("pl-PL",{weekday:"short",day:"numeric",month:"short"});})();
+    const vol=filled.reduce((s,r)=>s+calcVol(r.sets),0);
+    onSave({id:uid(),date,name:n,location:loc,rows:filled,volume:Math.round(vol)});
+    const locLabel=(LOCS_DEFAULT.find(l=>l.id===loc)||LOCS_DEFAULT[2]).label;
+    let lines=["💪 *"+n+"* — "+date,"📍 "+locLabel,"📦 Objętość: "+Math.round(vol).toLocaleString()+" kg",""];
+    filled.forEach((row,i)=>{
+      lines.push("*"+(i+1)+". "+(getExName(row,exercises)||"Ćwiczenie "+(i+1))+"*");
+      row.sets.forEach((s,si)=>lines.push("  Seria "+(si+1)+": "+(s.weight||"—")+"kg × "+(s.reps||"—")+" powt."+(s.note?" ("+s.note+")":"")));
+    });
+    setSummary(lines.join("\n"));
+  };
+
+  const [copyFlash,setCopyFlash]=useState(false);
+  const doCopy=()=>{
+    if(!summary)return;
+    try{navigator.clipboard.writeText(summary);}
+    catch{const ta=document.createElement("textarea");ta.value=summary;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);}
+    setCopyFlash(true);setTimeout(()=>setCopyFlash(false),2000);
+  };
+  const handleNew=()=>{setSummary(null);setRows([mkRow(loc)]);setWname("");setDate(new Date().toISOString().slice(0,10));setSetComments({});setFirstSug({});setDismissedSug({});if(onBack)onBack();};
+
+  if(summary)return h("div",{style:{display:"flex",flexDirection:"column",gap:16},className:"anim"},
+    h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:C.accent,letterSpacing:".05em"}},"TRENING ZAPISANY ✓"),
+    h(Card,null,h(Lbl,null,"Podsumowanie"),h("pre",{style:{fontSize:13,color:C.text,whiteSpace:"pre-wrap",lineHeight:1.7,marginTop:8}},summary)),
+    h("div",{style:{display:"flex",gap:10}},
+      h(Btn,{onClick:doCopy,full:true,style:{flex:2,background:copyFlash?C.green:C.accent,color:C.accentTxt}},copyFlash?"✓ Skopiowano!":"📋 Kopiuj"),
+      h(Btn,{onClick:handleNew,variant:"ghost",full:true,style:{flex:1}},"Nowy trening")
+    )
+  );
+
+  return h("div",{style:{display:"flex",flexDirection:"column",gap:16}},
+    prEvent&&h(PRBanner,{exName:prEvent.exName,weight:prEvent.weight,onClose:()=>setPrEvent(null)}),
+    h(RestTimer,{autoStartRef}),
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
+      h("div",null,h(Lbl,null,"Nazwa treningu"),h(Inp,{value:wname,onChange:setWname,placeholder:"opcjonalnie"})),
+      h("div",null,h(Lbl,null,"Data"),h(Inp,{type:"date",value:date,onChange:setDate}))
+    ),
+    h("div",null,h(Lbl,null,"Lokalizacja"),h(LocPicker,{value:loc,onChange:v=>{setLoc(v);setRows(r=>r.map(x=>({...x,location:v})))}})),
+    h(Hr,{m:"4px 0"}),
+    rows.map((row,ei)=>{
+      const locObj=(gyms||LOCS_DEFAULT).find(l=>l.id===row.location)||(gyms||LOCS_DEFAULT)[gyms.length-1]||LOCS_DEFAULT[2];
+      const exName=getExName(row,exercises);
+      const oldPR=row.exId?getPR(row.exId,logs,row.location):0;
+      const sug=firstSug[row.id],loadingSug=loadingFirstSug[row.id];
+      return h("div",{key:row.id,className:"anim",style:{background:C.card,borderRadius:12,border:"1px solid "+C.border2,overflow:"hidden"}},
+        h("div",{style:{padding:"12px 14px 0"}},
+          // Row header
+          h("div",{style:{display:"flex",gap:8,alignItems:"center",marginBottom:10}},
+            h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:C.accent,minWidth:26}},ei+1),
+            h("div",{style:{flex:1}},
+              row.exId
+                ?h("div",{style:{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}},
+                    h("div",{style:{fontWeight:600,fontSize:14,color:C.text,flex:1}},exName),
+                    (row.planSets||row.planReps)&&h(Tag,{color:C.muted2,small:true},(row.planSets||"?")+"×"+(row.planReps||"?")),
+                    oldPR>0&&h(Tag,{color:C.accent,small:true},"PR: "+oldPR+"kg"),
+                    h("button",{onClick:()=>setShowHist(s=>({...s,[row.id]:!s[row.id]})),style:{fontSize:11,fontWeight:600,cursor:"pointer",borderRadius:6,padding:"3px 8px",background:showHist[row.id]?C.blue+"22":"transparent",color:showHist[row.id]?C.blue:C.muted,border:"1px solid "+(showHist[row.id]?C.blue:C.border)}},"📊 Historia"),
+                    h("button",{onClick:()=>updRow(row.id,{exId:null,customName:""}),style:{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:12}},"zmień")
+                  )
+                :h(ExSelector,{exercises,value:row.customName,onChange:v=>updRow(row.id,{customName:v,exId:null}),onSelect:id=>{updRow(row.id,{exId:id,customName:""});fetchFirstSug(row.id,id,row.location);}})
+            ),
+            h("select",{value:row.location,onChange:e=>updRow(row.id,{location:e.target.value}),style:{fontSize:11,fontWeight:600,background:locObj.color+"22",color:locObj.color,border:"1px solid "+locObj.color+"44",borderRadius:6,padding:"4px 8px",cursor:"pointer",outline:"none"}},
+              (gyms||LOCS_DEFAULT).map(l=>h("option",{key:l.id,value:l.id,style:{background:C.surface,color:C.text}},l.short))
+            ),
+            rows.length>1&&h("button",{onClick:()=>delRow(row.id),style:{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18}},"×")
+          ),
+          // Inline history
+          showHist[row.id]&&row.exId&&(()=>{
+            const hist=getProgress(row.exId,logs,row.location);
+            const recent=hist.slice().reverse().slice(0,5);
+            return h("div",{style:{background:C.surface,borderRadius:8,padding:"10px 12px",marginBottom:10,border:"1px solid "+C.blue+"44",borderLeft:"3px solid "+C.blue}},
+              h("div",{style:{fontSize:11,color:C.blue,fontWeight:700,marginBottom:8,letterSpacing:".06em"}},"OSTATNIE SESJE"),
+              recent.length===0?h("div",{style:{fontSize:12,color:C.muted}},"Brak historii dla tej lokalizacji")
+              :recent.map((pt,i)=>h("div",{key:i,style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:i<recent.length-1?5:0}},
+                h("span",{style:{fontSize:12,color:C.muted2}},pt.date),
+                h("div",{style:{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"flex-end"}},
+                  pt.sets.map((s,si)=>h("span",{key:si,style:{fontSize:11,color:C.text,background:C.card,borderRadius:4,padding:"2px 6px",border:"1px solid "+C.border}},s.weight+"×"+s.reps))
+                )
+              ))
+            );
+          })(),
+          // AI first-set suggestion
+          row.exId&&!dismissedSug[row.id]&&(sug||loadingSug)&&h("div",{style:{display:"flex",alignItems:"center",gap:8,background:"linear-gradient(90deg,"+C.accent+"15,transparent)",border:"1px solid "+C.accent+"44",borderRadius:8,padding:"8px 12px",marginBottom:10}},
+            h("span",{style:{fontSize:14,flexShrink:0}},"🤖"),
+            loadingSug
+              ?h(Fragment,null,h("span",{className:"dot",style:{background:C.accent}}),h("span",{className:"dot",style:{background:C.accent}}),h("span",{className:"dot",style:{background:C.accent}}),h("span",{style:{fontSize:12,color:C.muted,marginLeft:4}},"AI sprawdza historię…"))
+              :h(Fragment,null,
+                  h("div",{style:{flex:1}},h("div",{style:{fontSize:10,color:C.accent,fontWeight:700,marginBottom:2,letterSpacing:".06em"}},"SUGESTIA AI"),h("div",{style:{fontSize:13,color:C.text,lineHeight:1.4}},sug)),
+                  h("button",{onClick:()=>setDismissedSug(s=>({...s,[row.id]:true})),style:{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16,flexShrink:0}},"×")
+                )
+          ),
+          // Sets header
+          h("div",{style:{display:"grid",gridTemplateColumns:"36px 1fr 1fr 1fr 22px",gap:5,marginBottom:5}},
+            ["✓","Powt.","Ciężar kg","Notatka",""].map((hd,i)=>h("div",{key:i,style:{fontSize:10,color:C.muted,letterSpacing:".07em",textTransform:"uppercase",textAlign:i===0?"center":"left"}},hd))
+          ),
+          // Sets
+          row.sets.map((s,si)=>{
+            const key=row.id+"_"+s.id;
+            const cmt=setComments[key],loadingCmt2=loadingCmt[key];
+            const isNewPR=parseFloat(s.weight)>oldPR&&oldPR>0&&parseFloat(s.weight)>0;
+            return h(Fragment,{key:s.id},
+              h("div",{style:{display:"grid",gridTemplateColumns:"36px 1fr 1fr 1fr 22px",gap:5,marginBottom:2,opacity:s.done?.55:1,transition:"opacity .2s"}},
+                h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center"}},
+                  h("button",{onClick:()=>handleCheck(row.id,s.id),style:{width:28,height:28,borderRadius:7,border:"2px solid "+(s.done?C.accent:C.border2),background:s.done?C.accent:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .18s",fontSize:15,color:s.done?C.accentTxt:"transparent",fontWeight:700}},s.done?"✓":"")
+                ),
+                h(Inp,{type:"number",value:s.reps,onChange:v=>updSet(row.id,s.id,"reps",v),placeholder:"12",style:{padding:"7px 8px",borderColor:s.done?C.accent:isNewPR?C.accent:C.border}}),
+                h(Inp,{type:"number",value:s.weight,onChange:v=>updSet(row.id,s.id,"weight",v),placeholder:"60",style:{padding:"7px 8px",borderColor:s.done?C.accent:isNewPR?C.accent:C.border}}),
+                h(Inp,{value:s.note,onChange:v=>updSet(row.id,s.id,"note",v),placeholder:"–",style:{padding:"7px 8px"}}),
+                row.sets.length>1?h("button",{onClick:()=>delSet(row.id,s.id),style:{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:15}},"×"):h("span",null)
+              ),
+              loadingCmt2&&h("div",{style:{padding:"5px 4px 5px 42px",display:"flex",alignItems:"center",gap:3,marginBottom:4}},h("span",{className:"dot",style:{background:C.accent}}),h("span",{className:"dot",style:{background:C.accent}}),h("span",{className:"dot",style:{background:C.accent}}),h("span",{style:{fontSize:11,color:C.muted,marginLeft:4}},"AI analizuje…")),
+              cmt&&(()=>{
+                const ck="cmt_"+key,isColl=collapsed[ck];
+                return h("div",{style:{marginBottom:6,animation:"float-in .3s ease"}},
+                  h("div",{onClick:()=>setCollapsed(c=>({...c,[ck]:!c[ck]})),style:{display:"flex",alignItems:"center",gap:6,cursor:"pointer",background:C.card,borderRadius:isColl?"8px":"8px 8px 0 0",padding:"6px 10px",border:"1px solid "+C.accent+"44",borderLeft:"3px solid "+C.accent}},
+                    h("span",{style:{fontSize:11,color:C.accent,fontWeight:700}},"🤖 AI Coach"),
+                    isColl&&h("span",{style:{fontSize:11,color:C.muted,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},cmt.slice(0,55)+"…"),
+                    h("span",{style:{fontSize:11,color:C.muted,marginLeft:"auto"}},isColl?"▼":"▲")
+                  ),
+                  !isColl&&h("div",{style:{fontSize:13,color:C.text,background:C.card,borderRadius:"0 0 8px 8px",padding:"8px 10px",border:"1px solid "+C.accent+"44",borderTop:"none",lineHeight:1.55}},cmt)
+                );
+              })(),
+              isNewPR&&!s.done&&h("div",{style:{fontSize:11,color:C.accent,fontWeight:600,marginBottom:4,paddingLeft:42}},"🏆 Powyżej Twojego rekordu!")
+            );
+          })
+        ),
+        // Row footer with rest picker
+        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 14px 10px",gap:8}},
+          h("div",{style:{display:"flex",gap:6}},
+            h(Btn,{small:true,variant:"muted",onClick:()=>addSet(row.id)},"+ Seria"),
+            (()=>{const last=row.sets[row.sets.length-1];return last&&last.weight?h("button",{
+              onClick:()=>setRows(r=>r.map(x=>x.id===row.id?{...x,sets:[...x.sets,{...mkSet(),weight:last.weight,reps:last.reps}]}:x)),
+              style:{fontWeight:600,fontSize:11,background:C.surface,color:C.muted2,border:"1px solid "+C.border,borderRadius:6,padding:"6px 10px",cursor:"pointer"}
+            },"↩ "+last.weight+"kg×"+last.reps):null;})()
+          ),
+          h("div",{style:{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}},
+            calcVol(row.sets)>0&&h("span",{style:{fontSize:11,color:C.muted}},"Vol: "+Math.round(calcVol(row.sets)).toLocaleString()+"kg"),
+            h("div",{style:{display:"flex",alignItems:"center",gap:4}},
+              h("span",{style:{fontSize:11,color:C.muted}},"⏱"),
+              h(Sel,{value:String(row.restSeconds||90),onChange:v=>setRows(r=>r.map(x=>x.id===row.id?{...x,restSeconds:parseInt(v)}:x)),
+                options:REST_OPTIONS.map(s=>({v:String(s),l:restLabel(s)})),style:{fontSize:11,padding:"3px 6px",width:"auto"}})
+            ),
+            h(Tag,{color:locObj.color,small:true},locObj.label)
+          )
+        )
+      );
+    }),
+    h(Btn,{variant:"ghost",onClick:addRow,full:true},"+ Dodaj ćwiczenie"),
+    h(Hr,{m:"6px 0"}),
+    h(Btn,{onClick:handleSave,full:true},"Zapisz trening →")
+  );
+}
+
+// ── AI Coach Tab ──────────────────────────────────────────────────────────────
+function AICoachTab({logs,exercises,setExercises,apiKey,setApiKey,onSavePlan,messages,setMessages,pendingPlan,setPendingPlan,planSaved,setPlanSaved}){
+  const C=useC();
+  const [input,setInput]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [keyInput,setKeyInput]=useState(apiKey||"");
+  const [showKey,setShowKey]=useState(false);
+  const bottomRef=useRef(null);
+  useEffect(()=>{bottomRef.current&&bottomRef.current.scrollIntoView({behavior:"smooth"});},[messages]);
+  useEffect(()=>{
+    if(apiKey&&messages.length===0)setMessages([{role:"assistant",content:"Cześć! 👋 Jestem Twoim AI trenerem.\n\nMam dostęp do Twojej historii ("+logs.length+" treningów, "+exercises.length+" ćwiczeń).\n\nMogę pomóc z:\n• 🎯 Sugestią ciężarów\n• 📈 Analizą postępów\n• 🗓️ Tworzeniem planów\n\nO co chcesz zapytać?"}]);
+  },[apiKey]);
+  const buildCtx=()=>{
+    const rl=logs.slice(-8).map(l=>{const rs=(l.rows||[]).map(r=>getExName(r,exercises)+": "+(r.sets||[]).map(s=>s.weight+"x"+s.reps).join(", ")).join(" | ");return l.date+"["+l.location+"]: "+rs;}).join("\n");
+    const prs=exercises.map(ex=>{const pr=getPR(ex.id,logs,"all");return pr>0?ex.name+": "+pr+"kg":null;}).filter(Boolean).join(", ");
+    return "Jestes trenerem. Odpowiadaj po polsku. Badz konkretny.\n\nGdy prosza o plan, dolacz na koncu:\n```json\n{\"name\":\"Nazwa\",\"days\":\"Pon,Sr,Pt\",\"exercises\":[{\"name\":\"Cwiczenie\",\"sets\":\"4\",\"reps\":\"8-12\",\"rest\":\"90\",\"note\":\"\",\"category\":\"Klatka\"}]}\n```\n\nHISTORIA:\n"+(rl||"Brak")+"\n\nPR: "+(prs||"Brak")+"\n\nBIBLIOTEKA: "+exercises.map(e=>e.name).join(", ");
+  };
+  const send=async(txt)=>{
+    if(!txt.trim())return;
+    const newMsgs=[...messages,{role:"user",content:txt}];
+    setMessages(newMsgs);setInput("");setLoading(true);
+    try{
+      const reply=await callAI(apiKey,newMsgs.map(m=>({role:m.role,content:m.content})),buildCtx());
+      const plan=extractPlan(reply);
+      setMessages(m=>[...m,{role:"assistant",content:reply.replace(/```json[\s\S]*?```/g,"").trim()}]);
+      if(plan&&plan.name&&plan.exercises)setPendingPlan(plan);
+    }catch(e){setMessages(m=>[...m,{role:"assistant",content:"❌ Błąd: "+e.message}]);}
+    setLoading(false);
+  };
+  const handleSavePlan=async(plan)=>{
+    const updated=[...exercises];
+    for(const ex of (plan.exercises||[])){
+      const name=(ex.name||"").trim();
+      if(!name)continue;
+      if(!updated.find(e=>e.name.toLowerCase()===name.toLowerCase()))
+        updated.push({id:uid(),name,category:ex.category||"",note:"",createdAt:new Date().toISOString()});
+    }
+    if(updated.length!==exercises.length){setExercises(updated);save(K.EX,updated);}
+    onSavePlan({id:uid(),name:plan.name||"Plan AI",days:plan.days||"",exercises:plan.exercises||[]});
+    setPlanSaved(true);setPendingPlan(null);setTimeout(()=>setPlanSaved(false),3000);
+  };
+  if(!apiKey)return h("div",{style:{display:"flex",flexDirection:"column",gap:16}},
+    h(Card,null,
+      h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:C.accent,marginBottom:8,letterSpacing:".05em"}},"🤖 AI COACH"),
+      h("div",{style:{fontSize:14,color:C.muted2,lineHeight:1.6,marginBottom:16}},"Wymaga klucza API Anthropic (console.anthropic.com)."),
+      h(Lbl,null,"Klucz API (sk-ant-...)"),
+      h("div",{style:{display:"flex",gap:8,marginBottom:8}},
+        h(Inp,{type:showKey?"text":"password",value:keyInput,onChange:setKeyInput,placeholder:"sk-ant-api03-…"}),
+        h("button",{onClick:()=>setShowKey(s=>!s),style:{background:C.surface,border:"1px solid "+C.border,borderRadius:7,padding:"0 12px",cursor:"pointer",color:C.muted2,fontSize:14}},showKey?"🙈":"👁")
+      ),
+      h(Btn,{onClick:()=>{setApiKey(keyInput);saveStr(K.APIKEY,keyInput);},disabled:!keyInput.startsWith("sk-ant")},"Zapisz klucz"),
+      h("div",{style:{fontSize:11,color:C.muted,marginTop:10}},"🔒 Klucz zapisany tylko lokalnie na Twoim urządzeniu.")
+    )
+  );
+  return h("div",{style:{display:"flex",flexDirection:"column",height:"calc(100vh - 185px)"}},
+    h("div",{style:{display:"flex",gap:8,marginBottom:10,flexShrink:0}},
+      h(Btn,{onClick:()=>send("Przeanalizuj moje ostatnie treningi: jak idą postępy, które ćwiczenia idą dobrze, co poprawić i jakie ciężary na następny trening?"),small:true,disabled:loading},"📈 Analizuj postępy"),
+      h("button",{onClick:()=>{setApiKey("");saveStr(K.APIKEY,"");setMessages([]);},style:{fontSize:11,background:"transparent",color:C.muted,border:"1px solid "+C.border,borderRadius:6,padding:"6px 10px",cursor:"pointer"}},"⚙️ Zmień klucz")
+    ),
+    h("div",{style:{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:10,paddingBottom:8}},
+      messages.length===0&&h("div",{style:{textAlign:"center",color:C.muted,paddingTop:40}},h("div",{style:{fontSize:36,marginBottom:8}},"🤖"),"Zadaj pytanie"),
+      messages.map((m,i)=>h("div",{key:i,style:{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start",animation:"float-in .25s ease"}},
+        h("div",{style:{maxWidth:"85%",background:m.role==="user"?C.userMsg:C.aiMsg,borderRadius:m.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",padding:"10px 14px",border:"1px solid "+C.border2}},
+          m.role==="assistant"&&h("div",{style:{fontSize:11,color:C.accent,fontWeight:700,marginBottom:4,letterSpacing:".05em"}},"🤖 AI COACH"),
+          h("div",{style:{fontSize:13,color:C.text,lineHeight:1.6,whiteSpace:"pre-wrap"}},m.content)
+        )
+      )),
+      loading&&h("div",{style:{display:"flex",justifyContent:"flex-start"}},
+        h("div",{style:{background:C.aiMsg,borderRadius:"14px 14px 14px 4px",padding:"12px 16px",border:"1px solid "+C.border2}},
+          h("span",{className:"dot",style:{background:C.muted2}}),h("span",{className:"dot",style:{background:C.muted2}}),h("span",{className:"dot",style:{background:C.muted2}})
+        )
+      ),
+      h("div",{ref:bottomRef})
+    ),
+    pendingPlan&&h("div",{style:{background:C.card,border:"1px solid "+C.accent+"66",borderRadius:10,padding:"10px 14px",marginBottom:8,flexShrink:0}},
+      h("div",{style:{fontSize:13,color:C.text,marginBottom:6}},h("span",{style:{color:C.accent,fontWeight:700}},"📋 Plan: "),pendingPlan.name),
+      h("div",{style:{fontSize:11,color:C.muted,marginBottom:10}},(pendingPlan.exercises||[]).map(e=>e.name).join(", ")),
+      h("div",{style:{display:"flex",gap:8}},
+        h(Btn,{onClick:()=>handleSavePlan(pendingPlan),style:{flex:2,background:planSaved?C.green:C.accent,color:C.accentTxt}},planSaved?"✓ Zapisano!":"💾 Zapisz plan"),
+        h(Btn,{onClick:()=>setPendingPlan(null),variant:"ghost",style:{flex:1}},"Odrzuć")
+      )
+    ),
+    h("div",{style:{display:"flex",gap:8,flexShrink:0,paddingTop:8,borderTop:"1px solid "+C.border}},
+      h(Inp,{value:input,onChange:setInput,placeholder:"Zapytaj o ciężary, postępy, plan…",onKeyDown:e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send(input);}},style:{flex:1}}),
+      h("button",{onClick:()=>send(input),disabled:!input.trim()||loading,style:{background:C.accent,color:C.accentTxt,border:"none",borderRadius:7,padding:"0 16px",cursor:(!input.trim()||loading)?"not-allowed":"pointer",fontSize:18,opacity:(!input.trim()||loading)?.4:1,flexShrink:0}},"↑")
+    )
+  );
+}
+
+// ── Stats Tab ─────────────────────────────────────────────────────────────────
+function StatsTab({logs,exercises}){
+  const gyms=useGyms();
+  const lang=useLang();
+  const C=useC();
+  const [month,setMonth]=useState(()=>{const d=new Date();return{y:d.getFullYear(),m:d.getMonth()};});
+  const daysInMonth=new Date(month.y,month.m+1,0).getDate();
+  const firstDay=(new Date(month.y,month.m,1).getDay()+6)%7;
+  const trainingDays=new Set(logs.filter(l=>{const d=new Date(l.date);return d.getFullYear()===month.y&&d.getMonth()===month.m;}).map(l=>new Date(l.date).getDate()));
+  const monthNames=["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
+  const monthLogs=logs.filter(l=>{const d=new Date(l.date);return d.getFullYear()===month.y&&d.getMonth()===month.m;});
+  const monthVol=monthLogs.reduce((s,l)=>s+(l.volume||(l.rows||[]).reduce((ss,r)=>ss+calcVol(r.sets||[]),0)),0);
+  const monthSets=monthLogs.reduce((s,l)=>(l.rows||[]).reduce((ss,r)=>ss+(r.sets||[]).filter(s2=>s2.reps||s2.weight).length,s),0);
+  const totalVol=logs.reduce((s,l)=>s+(l.volume||(l.rows||[]).reduce((ss,r)=>ss+calcVol(r.sets||[]),0)),0);
+  const streak=useMemo(()=>{
+    if(!logs.length)return 0;
+    const sorted=[...new Set(logs.map(l=>l.date))].sort().reverse();
+    let s=0,prev=null;
+    for(const d of sorted){
+      if(!prev){if((new Date()-new Date(d))/(86400000)>1.5)break;prev=d;s=1;continue;}
+      if((new Date(prev)-new Date(d))/(86400000)<=1.5){s++;prev=d;}else break;
+    }
+    return s;
+  },[logs]);
+  const weeklyData=useMemo(()=>{
+    return Array.from({length:8},(_,i)=>{
+      const end=new Date();end.setDate(end.getDate()-(7-i)*7);
+      const start=new Date(end);start.setDate(start.getDate()-6);
+      const wl=logs.filter(l=>{const d=new Date(l.date);return d>=start&&d<=end;});
+      return {label:start.toLocaleDateString("pl-PL",{day:"numeric",month:"numeric"}),vol:Math.round(wl.reduce((s,l)=>s+(l.volume||(l.rows||[]).reduce((ss,r)=>ss+calcVol(r.sets||[]),0)),0)),count:wl.length};
+    });
+  },[logs]);
+  const muscleBreakdown=useMemo(()=>{
+    const ago=new Date();ago.setDate(ago.getDate()-30);
+    const counts={};
+    logs.filter(l=>new Date(l.date)>=ago).forEach(log=>(log.rows||[]).forEach(row=>{
+      const ex=exercises.find(e=>e.id===row.exId);
+      const cat=ex&&ex.category?ex.category:"Inne";
+      const sets=(row.sets||[]).filter(s=>s.reps||s.weight).length;
+      counts[cat]=(counts[cat]||0)+sets;
+    }));
+    return Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  },[logs,exercises]);
+  const maxWeekVol=Math.max(1,...weeklyData.map(w=>w.vol));
+  const maxMuscle=Math.max(1,...muscleBreakdown.map(([,v])=>v));
+  const MCOLS={"Klatka":"#4a7c59","Plecy":"#2e7d8a","Barki":"#7a6a3a","Biceps":"#5a4a7a","Triceps":"#7a3a3a","Nogi":"#3a6a7a","Brzuch":"#6a7a3a","Cardio":"#7a5a3a","Inne":"#555"};
+  return h("div",{style:{display:"flex",flexDirection:"column",gap:16}},
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}},
+      [["🏋️","Treningów",logs.length],["🔥","Streak",streak+" dni"],["📦","Łącznie",Math.round(totalVol/1000*10)/10+"t"]].map(([icon,label,val])=>
+        h(Card,{key:label,style:{padding:"12px 14px",textAlign:"center"}},h("div",{style:{fontSize:22,marginBottom:4}},icon),h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:C.accent}},val),h("div",{style:{fontSize:10,color:C.muted,letterSpacing:".08em",textTransform:"uppercase",marginTop:2}},label))
+      )
+    ),
+    h(Card,{style:{padding:16}},
+      h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}},
+        h("button",{onClick:()=>setMonth(({y,m})=>m===0?{y:y-1,m:11}:{y,m:m-1}),style:{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:22,padding:"0 8px"}},"‹"),
+        h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:C.text,letterSpacing:".05em"}},monthNames[month.m]+" "+month.y),
+        h("button",{onClick:()=>setMonth(({y,m})=>m===11?{y:y+1,m:0}:{y,m:m+1}),style:{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:22,padding:"0 8px"}},"›")
+      ),
+      h("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:8}},
+        ["Pn","Wt","Śr","Cz","Pt","So","Nd"].map(d=>h("div",{key:d,style:{fontSize:10,color:C.muted,textAlign:"center",letterSpacing:".04em"}},d))
+      ),
+      h("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}},
+        Array.from({length:firstDay},(_,i)=>h("div",{key:"e"+i})),
+        Array.from({length:daysInMonth},(_,i)=>{
+          const day=i+1,hasTr=trainingDays.has(day);
+          const isToday=new Date().getDate()===day&&new Date().getMonth()===month.m&&new Date().getFullYear()===month.y;
+          return h("div",{key:day,style:{aspectRatio:"1",display:"flex",alignItems:"center",justifyContent:"center",borderRadius:7,fontSize:13,fontWeight:hasTr?700:400,background:hasTr?C.accent:isToday?C.surface:"transparent",color:hasTr?C.accentTxt:isToday?C.text:C.muted,border:isToday&&!hasTr?"1px solid "+C.border2:"none"}},day);
+        })
+      ),
+      monthLogs.length>0&&h("div",{style:{marginTop:12,display:"flex",gap:16,borderTop:"1px solid "+C.border,paddingTop:12,flexWrap:"wrap"}},
+        [["Treningów",monthLogs.length],["Objętość",Math.round(monthVol).toLocaleString()+" kg"],["Serie",monthSets]].map(([l,v])=>
+          h("div",{key:l},h(Lbl,null,l),h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:C.accent}},v))
+        )
+      )
+    ),
+    h(Card,{style:{padding:16}},
+      h(Lbl,null,"Objętość tygodniowa (kg)"),
+      h("div",{style:{display:"flex",alignItems:"flex-end",gap:4,height:80,marginTop:10}},
+        weeklyData.map((w,i)=>h("div",{key:i,style:{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}},
+          h("div",{style:{width:"100%",background:i===7?C.accent:C.accent+"55",borderRadius:"4px 4px 0 0",height:(w.vol/maxWeekVol*64)+"px",minHeight:w.vol>0?4:0,transition:"height .3s"}}),
+          h("div",{style:{fontSize:8,color:C.muted,textAlign:"center",transform:"rotate(-35deg)",transformOrigin:"top center",marginTop:4,whiteSpace:"nowrap"}},w.label)
+        ))
+      )
+    ),
+    muscleBreakdown.length>0&&h(Card,{style:{padding:16}},
+      h(Lbl,null,"Serie na partię (ostatnie 30 dni)"),
+      h("div",{style:{display:"flex",flexDirection:"column",gap:8,marginTop:8}},
+        muscleBreakdown.map(([cat,count])=>{
+          const color=MCOLS[cat]||"#555";
+          return h("div",{key:cat},
+            h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:4}},h("span",{style:{fontSize:13,color:C.text,fontWeight:600}},cat),h("span",{style:{fontSize:13,color:C.muted}},count+" serii")),
+            h("div",{style:{height:8,background:C.surface,borderRadius:4,overflow:"hidden"}},h("div",{style:{height:"100%",width:(count/maxMuscle*100)+"%",background:color,borderRadius:4,transition:"width .5s ease"}}))
+          );
+        })
+      )
+    )
+  );
+}
+
+// ── Exercises Tab ─────────────────────────────────────────────────────────────
+function ExercisesTab({exercises,setExercises,logs}){
+  const gyms=useGyms();
+  const C=useC();
+  const [view,setView]=useState("list");
+  const [curr,setCurr]=useState(null);
+  const [form,setForm]=useState({name:"",category:"",note:""});
+  const [locFilter,setLocFilter]=useState("all");
+  const [flash,setFlash]=useState(false);
+  const persist=u=>{setExercises(u);save(K.EX,u);};
+  const addEx=()=>{
+    if(!form.name.trim())return;
+    persist([...exercises,{id:uid(),...form,createdAt:new Date().toISOString()}]);
+    setForm({name:"",category:"",note:""});setFlash(true);setTimeout(()=>setFlash(false),1500);
+  };
+  if(view==="detail"&&curr){
+    const ex=exercises.find(e=>e.id===curr);if(!ex)return h("div",null);
+    const progress=getProgress(ex.id,logs,locFilter==="all"?null:locFilter);
+    const last=progress[progress.length-1],first=progress[0];
+    const diff=progress.length>1?last.y-first.y:null;
+    const locObj=LOCS_DEFAULT.find(l=>l.id===locFilter);
+    const totalVol=logs.reduce((s,log)=>{(log.rows||[]).forEach(r=>{if(r.exId===ex.id)s+=calcVol(r.sets||[]);});return s;},0);
+    return h("div",{style:{display:"flex",flexDirection:"column",gap:14},className:"anim"},
+      h("div",{style:{display:"flex",gap:10,alignItems:"center"}},
+        h("button",{onClick:()=>setView("list"),style:{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:20}},"←"),
+        h("div",{style:{flex:1}},h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:26,color:C.text,letterSpacing:".04em"}},ex.name),ex.category&&h(Tag,{color:C.accent,small:true},ex.category)),
+        h(Btn,{small:true,variant:"danger",onClick:()=>{persist(exercises.filter(e=>e.id!==curr));setView("list");}},"Usuń")
+      ),
+      h("div",null,h(Lbl,null,"Filtr lokalizacji"),
+        h("div",{style:{display:"flex",gap:6}},
+          h("button",{onClick:()=>setLocFilter("all"),style:{fontWeight:600,fontSize:11,cursor:"pointer",borderRadius:6,padding:"5px 10px",background:locFilter==="all"?C.surface:"transparent",color:locFilter==="all"?C.text:C.muted,border:"1px solid "+(locFilter==="all"?C.border2:C.border),flex:1}},"Wszystkie"),
+          (gyms||LOCS_DEFAULT).map(l=>h("button",{key:l.id,onClick:()=>setLocFilter(l.id),style:{fontWeight:600,fontSize:11,cursor:"pointer",borderRadius:6,padding:"5px 8px",background:locFilter===l.id?l.color+"22":"transparent",color:locFilter===l.id?l.color:C.muted,border:"1px solid "+(locFilter===l.id?l.color:C.border),flex:1}},l.short))
+        )
+      ),
+      progress.length>0?h(Fragment,null,
+        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}},
+          [["Maks. PR",last.y+" kg",C.accent],["Sesji",String(progress.length),C.blue],["Progres",diff!=null?(diff>=0?"+"+diff.toFixed(1):diff.toFixed(1))+" kg":"—",diff!=null&&diff>0?C.green:diff<0?C.danger:C.muted2]].map(([l,v,c])=>
+            h(Card,{key:l,style:{padding:"12px 14px"}},h(Lbl,null,l),h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:c}},v))
+          )
+        ),
+        h(Card,{style:{padding:16}},h(Lbl,null,"Progresja ciężaru"+(locObj?" ("+locObj.label+")":"")),h("div",{style:{marginTop:8}},h(Sparkline,{data:progress,color:locFilter==="waw"?"#3ab8ff":locFilter==="poz"?"#b06cff":C.accent})),h("div",{style:{display:"flex",justifyContent:"space-between",marginTop:6}},h("span",{style:{fontSize:10,color:C.muted}},first.date),h("span",{style:{fontSize:10,color:C.muted}},last.date))),
+        h(Card,{style:{padding:"12px 14px"}},h(Lbl,null,"Łączna objętość"),h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,color:C.blue}},Math.round(totalVol).toLocaleString()+" kg")),
+        h("div",null,h(Lbl,null,"Ostatnie sesje"),progress.slice().reverse().slice(0,8).map((pt,i)=>h(Card,{key:i,style:{padding:"10px 12px",marginBottom:6,borderRadius:8}},h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:4}},h("span",{style:{fontSize:12,color:C.muted2}},pt.date),h("span",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:16,color:C.accent}},pt.y+" kg")),h("div",{style:{display:"flex",gap:5,flexWrap:"wrap"}},pt.sets.map((s,si)=>h("span",{key:si,style:{fontSize:11,color:C.muted,background:C.surface,borderRadius:4,padding:"2px 7px"}},s.weight+"×"+s.reps))))))
+      ):h("div",{style:{textAlign:"center",color:C.muted,paddingTop:30}},h("div",{style:{fontSize:36,marginBottom:8}},"📈"),"Brak danych"),
+      ex.note&&h("div",{style:{fontSize:13,color:C.muted2,fontStyle:"italic"}},ex.note)
+    );
+  }
+  return h("div",{style:{display:"flex",flexDirection:"column",gap:14}},
+    h(Card,null,
+      h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:16,color:C.accent,marginBottom:12,letterSpacing:".06em"}},"DODAJ ĆWICZENIE"),
+      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}},
+        h("div",null,h(Lbl,null,"Nazwa"),h(Inp,{value:form.name,onChange:v=>setForm(f=>({...f,name:v})),placeholder:"np. Wyciskanie…",onKeyDown:e=>e.key==="Enter"&&addEx()})),
+        h("div",null,h(Lbl,null,"Kategoria"),h(Sel,{value:form.category,onChange:v=>setForm(f=>({...f,category:v})),options:[{v:"",l:"Wybierz…"},...CATS.map(c=>({v:c,l:c}))]}))
+      ),
+      h(Inp,{value:form.note,onChange:v=>setForm(f=>({...f,note:v})),placeholder:"Notatka",style:{marginBottom:10}}),
+      h(Btn,{onClick:addEx,small:true,style:{background:flash?C.green:C.accent,color:C.accentTxt}},flash?"✓ Dodano!":"Dodaj ćwiczenie")
+    ),
+    h(Hr,{m:"4px 0"}),
+    exercises.length===0?h("div",{style:{textAlign:"center",color:C.muted,paddingTop:30}},h("div",{style:{fontSize:36,marginBottom:8}},"📚"),"Brak ćwiczeń")
+    :h(Fragment,null,
+        h("div",{style:{fontSize:11,color:C.muted,letterSpacing:".08em",textTransform:"uppercase"}},exercises.length+" ćwiczeń"),
+        exercises.map(ex=>{
+          const pts=getProgress(ex.id,logs,null),pr=getPR(ex.id,logs,"all");
+          return h(Card,{key:ex.id,onClick:()=>{setCurr(ex.id);setView("detail");},className:"anim",style:{padding:"12px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}},
+            h("div",null,h("div",{style:{fontWeight:600,fontSize:14,color:C.text}},ex.name),h("div",{style:{display:"flex",gap:6,marginTop:4,alignItems:"center"}},ex.category&&h(Tag,{color:C.accent,small:true},ex.category),pr>0&&h(Tag,{color:"#c8a800",small:true},"🏆 "+pr+"kg"),h("span",{style:{fontSize:11,color:C.muted}},pts.length>0?pts.length+" sesji":"Brak danych"))),
+            h("div",{style:{color:C.accent,fontSize:16}},"→")
+          );
+        })
+      )
+  );
+}
+
+// ── History Tab ───────────────────────────────────────────────────────────────
+function HistoryTab({logs,onDelete,exercises}){
+  const gyms=useGyms();
+  const lang=useLang();
+  const C=useC();
+  const [exp,setExp]=useState(null);
+  if(!logs.length)return h("div",{style:{textAlign:"center",color:C.muted,paddingTop:60}},h("div",{style:{fontSize:40,marginBottom:12}},"📭"),"Brak treningów");
+  return h("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+    logs.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(log=>{
+      const locObj=(gyms||LOCS_DEFAULT).find(l=>l.id===log.location)||(gyms||LOCS_DEFAULT)[gyms.length-1]||LOCS_DEFAULT[2];
+      const vol=log.volume||(log.rows||[]).reduce((s,r)=>s+calcVol(r.sets||[]),0);
+      return h(Card,{key:log.id,className:"anim",style:{padding:0,overflow:"hidden"}},
+        h("div",{onClick:()=>setExp(exp===log.id?null:log.id),style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",cursor:"pointer"}},
+          h("div",null,h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:19,color:C.text,letterSpacing:".04em"}},log.name),h("div",{style:{fontSize:12,color:C.muted,marginTop:2,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}},h("span",null,log.date),h("span",null,(log.rows||[]).length+" ćw"),vol>0&&h("span",{style:{color:C.blue}},Math.round(vol).toLocaleString()+" kg"),h(Tag,{color:locObj.color,small:true},locObj.short))),
+          h("div",{style:{color:C.accent}},exp===log.id?"▲":"▼")
+        ),
+        exp===log.id&&h("div",{style:{padding:"0 14px 14px"}},
+          (log.rows||[]).map((row,ri)=>{
+            const rLoc=(gyms||LOCS_DEFAULT).find(l=>l.id===row.location)||locObj;
+            return h("div",{key:row.id||ri,style:{marginBottom:10}},
+              h("div",{style:{fontWeight:600,fontSize:13,color:C.accent,marginBottom:4,display:"flex",gap:8,alignItems:"center"}},(ri+1)+". "+getExName(row,exercises),h(Tag,{color:rLoc.color,small:true},rLoc.short)),
+              (row.sets||[]).map((s,si)=>h("div",{key:s.id||si,style:{fontSize:12,color:C.muted,paddingLeft:12,marginBottom:2}},"Seria "+(si+1)+": "+(s.weight||"—")+" kg × "+(s.reps||"—")+" powt."+(s.note?" · "+s.note:"")))
+            );
+          }),
+          h(Hr,null),h(Btn,{small:true,variant:"danger",onClick:()=>onDelete(log.id)},"Usuń trening")
+        )
+      );
+    })
+  );
+}
+
+// ── Plans Tab ─────────────────────────────────────────────────────────────────
+function PlansTab({onStartWorkout,exercises}){
+  const C=useC();
+  const [plans,setPlans]=useState(()=>load(K.PLANS));
+  const [view,setView]=useState("list");
+  const [curr,setCurr]=useState(null);
+  const [form,setForm]=useState({name:"",days:"",exercises:[mkPEx()],editingId:null});
+  const persist=u=>{setPlans(u);save(K.PLANS,u);};
+  const addEx=()=>setForm(f=>({...f,exercises:[...f.exercises,mkPEx()]}));
+  const delEx=id=>setForm(f=>({...f,exercises:f.exercises.filter(e=>e.id!==id)}));
+  const updEx=(id,field,val)=>setForm(f=>({...f,exercises:f.exercises.map(e=>e.id===id?{...e,[field]:val}:e)}));
+  const doSave=()=>{
+    if(!form.name.trim())return;
+    if(form.editingId){persist(plans.map(p=>p.id===form.editingId?{...p,name:form.name,days:form.days,exercises:form.exercises}:p));setCurr(form.editingId);}
+    else persist([...plans,{id:uid(),name:form.name,days:form.days,exercises:form.exercises}]);
+    setForm({name:"",days:"",exercises:[mkPEx()],editingId:null});
+    setView(form.editingId?"detail":"list");
+  };
+  const startEdit=(plan)=>{setForm({name:plan.name,days:plan.days||"",exercises:(plan.exercises||[]).map(e=>({...mkPEx(),...e})),editingId:plan.id});setView("create");};
+
+  if(view==="create")return h("div",{style:{display:"flex",flexDirection:"column",gap:14}},
+    h("div",{style:{display:"flex",gap:10,alignItems:"center"}},
+      h("button",{onClick:()=>{setView(form.editingId?"detail":"list");setForm({name:"",days:"",exercises:[mkPEx()],editingId:null});},style:{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:20}},"←"),
+      h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:C.text}},form.editingId?"EDYTUJ PLAN":"NOWY PLAN")
+    ),
+    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
+      h("div",null,h(Lbl,null,"Nazwa planu"),h(Inp,{value:form.name,onChange:v=>setForm(f=>({...f,name:v})),placeholder:"np. PPL, Full Body"})),
+      h("div",null,h(Lbl,null,"Dni tygodnia"),h(Inp,{value:form.days,onChange:v=>setForm(f=>({...f,days:v})),placeholder:"np. Pon, Śr, Pt"}))
+    ),
+    form.exercises.map((ex,ei)=>h(Card,{key:ex.id,style:{padding:14}},
+      h("div",{style:{display:"flex",gap:8,alignItems:"center",marginBottom:10}},
+        h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:18,color:C.accent,minWidth:24}},ei+1),
+        h(Inp,{value:ex.name,onChange:v=>updEx(ex.id,"name",v),placeholder:"Nazwa ćwiczenia"}),
+        form.exercises.length>1&&h("button",{onClick:()=>delEx(ex.id),style:{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:18}},"×")
+      ),
+      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}},
+        h("div",null,h(Lbl,null,"Serie"),h(Inp,{value:ex.sets,onChange:v=>updEx(ex.id,"sets",v),placeholder:"4"})),
+        h("div",null,h(Lbl,null,"Powt."),h(Inp,{value:ex.reps,onChange:v=>updEx(ex.id,"reps",v),placeholder:"8-12"})),
+        h("div",null,h(Lbl,null,"Przerwa"),h(Sel,{value:ex.rest||"90",onChange:v=>updEx(ex.id,"rest",v),options:REST_OPTIONS.map(s=>({v:String(s),l:restLabel(s)}))})),
+        h("div",null,h(Lbl,null,"Kategoria"),h(Sel,{value:ex.category||"",onChange:v=>updEx(ex.id,"category",v),options:[{v:"",l:"—"},...CATS.map(c=>({v:c,l:c}))]}))
+      ),
+      h("div",{style:{marginTop:8}},h(Lbl,null,"Notatka"),h(Inp,{value:ex.note,onChange:v=>updEx(ex.id,"note",v),placeholder:"opcjonalnie"}))
+    )),
+    h(Btn,{variant:"ghost",onClick:addEx,full:true},"+ Dodaj ćwiczenie"),
+    h(Hr,{m:"4px 0"}),
+    h(Btn,{onClick:doSave,full:true},form.editingId?"Zapisz zmiany":"Zapisz plan")
+  );
+
+  if(view==="detail"&&curr){
+    const plan=plans.find(p=>p.id===curr);if(!plan)return h("div",null);
+    return h("div",{style:{display:"flex",flexDirection:"column",gap:12}},
+      h("div",{style:{display:"flex",gap:10,alignItems:"center",justifyContent:"space-between"}},
+        h("div",{style:{display:"flex",gap:10,alignItems:"center"}},
+          h("button",{onClick:()=>setView("list"),style:{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:20}},"←"),
+          h("div",null,h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:C.text}},plan.name),plan.days&&h("div",{style:{fontSize:12,color:C.muted}},plan.days))
+        ),
+        h("div",{style:{display:"flex",gap:8}},
+          h(Btn,{small:true,variant:"ghost",onClick:()=>startEdit(plan)},"✏️ Edytuj"),
+          h(Btn,{small:true,variant:"danger",onClick:()=>{persist(plans.filter(p=>p.id!==curr));setView("list");}},"Usuń")
+        )
+      ),
+      (plan.exercises||[]).map((ex,ei)=>h(Card,{key:ex.id||ei,style:{padding:14}},
+        h("div",{style:{fontWeight:600,fontSize:14,color:C.accent,marginBottom:8}},(ei+1)+". "+(ex.name||"—")),
+        h("div",{style:{display:"flex",gap:16,flexWrap:"wrap"}},
+          [["Serie",ex.sets],["Powtórzenia",ex.reps],["Przerwa",ex.rest?restLabel(parseInt(ex.rest)||90):"—"]].filter(([,v])=>v).map(([l,v])=>h("div",{key:l},h(Lbl,null,l),h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:C.text}},v)))
+        ),
+        ex.note&&h("div",{style:{marginTop:8,fontSize:12,color:C.muted,fontStyle:"italic"}},ex.note)
+      )),
+      h(Hr,null),
+      h(Btn,{onClick:()=>onStartWorkout&&onStartWorkout(plan),full:true,style:{fontSize:15,padding:"13px 20px"}},"⚡ Rozpocznij ten trening")
+    );
+  }
+
+  return h("div",{style:{display:"flex",flexDirection:"column",gap:12}},
+    h(Btn,{onClick:()=>{setForm({name:"",days:"",exercises:[mkPEx()],editingId:null});setView("create");},full:true},"+ Nowy plan"),
+    !plans.length?h("div",{style:{textAlign:"center",color:C.muted,paddingTop:40}},h("div",{style:{fontSize:36,marginBottom:8}},"📝"),"Brak planów")
+    :plans.map(p=>h(Card,{key:p.id,onClick:()=>{setCurr(p.id);setView("detail");},className:"anim",style:{padding:"12px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}},
+        h("div",{style:{flex:1}},h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:19,color:C.text}},p.name),h("div",{style:{fontSize:12,color:C.muted}},(p.exercises||[]).length+" ćwiczeń"+(p.days?" · "+p.days:""))),
+        h("div",{style:{display:"flex",gap:8,alignItems:"center"}},
+          h("button",{onClick:e=>{e.stopPropagation();onStartWorkout&&onStartWorkout(p);},style:{fontWeight:700,fontSize:12,background:C.accent,color:C.accentTxt,border:"none",borderRadius:6,padding:"6px 12px",cursor:"pointer"}},"⚡ Start"),
+          h("div",{style:{color:C.accent,fontSize:14}},"→")
+        )
+      ))
+  );
+}
+
+// ── Workout Timer ────────────────────────────────────────────────────────────
+function WorkoutTimer({startTime,lang}){
+  const C=useC();
+  const [elapsed,setElapsed]=useState(0);
+  useEffect(()=>{
+    if(!startTime)return;
+    const t=setInterval(()=>setElapsed(Math.floor((Date.now()-startTime)/1000)),1000);
+    return()=>clearInterval(t);
+  },[startTime]);
+  if(!startTime)return null;
+  const h2=Math.floor(elapsed/3600),m=Math.floor((elapsed%3600)/60),s=elapsed%60;
+  const label=h2>0?h2+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"):String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
+  return h("div",{style:{display:"flex",alignItems:"center",gap:6,background:C.surface,borderRadius:8,padding:"5px 10px",border:"1px solid "+C.border}},
+    h("span",{style:{fontSize:12}},"⏱"),
+    h("span",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:18,color:C.accent,letterSpacing:".04em"}},label),
+    h("span",{style:{fontSize:10,color:C.muted,letterSpacing:".06em",textTransform:"uppercase"}},lang==="en"?"training":"trening")
+  );
+}
+
+// ── Settings Tab ──────────────────────────────────────────────────────────────
+const GYM_COLORS=["#3ab8ff","#b06cff","#4a7c59","#ff9f00","#ff4545","#3aff6e","#f5a623","#e8ff3a"];
+
+function SettingsTab({gyms,onSaveGyms,isDark,toggleTheme,lang,toggleLang,apiKey,setApiKey}){
+  const C=useC();
+  const [newName,setNewName]=useState("");
+  const [newShort,setNewShort]=useState("");
+  const [newColor,setNewColor]=useState(GYM_COLORS[0]);
+  const [keyInput,setKeyInput]=useState(apiKey||"");
+  const [showKey,setShowKey]=useState(false);
+  const [keySaved,setKeySaved]=useState(false);
+
+  const addGym=()=>{
+    if(!newName.trim()||!newShort.trim())return;
+    const gym={id:"gym_"+Date.now(),label:newName.trim(),labelEn:newName.trim(),color:newColor,short:newShort.trim().toUpperCase().slice(0,4)};
+    onSaveGyms([...gyms,gym]);
+    setNewName("");setNewShort("");setNewColor(GYM_COLORS[0]);
+  };
+  const removeGym=id=>onSaveGyms(gyms.filter(g=>g.id!==id));
+  const saveKey=()=>{setApiKey(keyInput);saveStr(K.APIKEY,keyInput);setKeySaved(true);setTimeout(()=>setKeySaved(false),2000);};
+
+  const pl=lang==="pl",S=(p,e)=>pl?p:e;
+
+  return h("div",{style:{display:"flex",flexDirection:"column",gap:16}},
+
+    // Language + Theme
+    h(Card,null,
+      h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:16,color:C.accent,marginBottom:12,letterSpacing:".06em"}},S("WYGLĄD I JĘZYK","APPEARANCE & LANGUAGE")),
+      h("div",{style:{display:"flex",gap:10}},
+        h("div",{style:{flex:1}},
+          h(Lbl,null,S("Motyw","Theme")),
+          h("button",{onClick:toggleTheme,style:{width:"100%",fontWeight:600,fontSize:13,background:C.surface,color:C.text,border:"1px solid "+C.border2,borderRadius:8,padding:"10px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}},
+            isDark?"☀️ "+S("Jasny","Light"):"🌙 "+S("Ciemny","Dark")
+          )
+        ),
+        h("div",{style:{flex:1}},
+          h(Lbl,null,S("Język","Language")),
+          h("button",{onClick:toggleLang,style:{width:"100%",fontWeight:600,fontSize:13,background:C.surface,color:C.text,border:"1px solid "+C.border2,borderRadius:8,padding:"10px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}},
+            lang==="pl"?"🇬🇧 English":"🇵🇱 Polski"
+          )
+        )
+      )
+    ),
+
+    // Gyms management
+    h(Card,null,
+      h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:16,color:C.accent,marginBottom:12,letterSpacing:".06em"}},S("SIŁOWNIE","GYMS")),
+      h("div",{style:{display:"flex",flexDirection:"column",gap:8,marginBottom:14}},
+        gyms.map(g=>h("div",{key:g.id,style:{display:"flex",alignItems:"center",gap:10,background:C.surface,borderRadius:8,padding:"10px 12px"}},
+          h("div",{style:{width:12,height:12,borderRadius:"50%",background:g.color,flexShrink:0}}),
+          h("div",{style:{flex:1}},
+            h("div",{style:{fontSize:13,fontWeight:600,color:C.text}},(lang==="en"&&g.labelEn)||g.label),
+            h("div",{style:{fontSize:10,color:C.muted}},g.short)
+          ),
+          !g.fixed&&h("button",{onClick:()=>removeGym(g.id),style:{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:16,padding:"0 4px"}},"×")
+        ))
+      ),
+      h(Lbl,null,S("Dodaj siłownię","Add gym")),
+      h("div",{style:{display:"grid",gridTemplateColumns:"1fr auto",gap:8,marginBottom:8}},
+        h(Inp,{value:newName,onChange:setNewName,placeholder:S("Nazwa siłowni","Gym name")}),
+        h(Inp,{value:newShort,onChange:setNewShort,placeholder:"SKT",style:{width:70}})
+      ),
+      h("div",{style:{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}},
+        GYM_COLORS.map(c=>h("button",{key:c,onClick:()=>setNewColor(c),style:{width:28,height:28,borderRadius:"50%",background:c,border:newColor===c?"3px solid "+C.text:"2px solid transparent",cursor:"pointer"}}))
+      ),
+      h(Btn,{onClick:addGym,small:true,disabled:!newName.trim()||!newShort.trim()},S("Dodaj","Add"))
+    ),
+
+    // Export / Import
+    h(Card,null,
+      h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:16,color:C.accent,marginBottom:12,letterSpacing:".06em"}},S("EKSPORT / IMPORT DANYCH","EXPORT / IMPORT DATA")),
+      h("div",{style:{fontSize:13,color:C.muted2,lineHeight:1.6,marginBottom:14}},
+        S("Eksportuj wszystkie dane (treningi, ćwiczenia, plany) do pliku JSON. Trzymaj go jako backup lub wgraj na nowe urządzenie.",
+          "Export all data (workouts, exercises, plans) to a JSON file. Keep it as backup or import on a new device.")
+      ),
+      h("div",{style:{display:"flex",gap:10,marginBottom:14}},
+        h(Btn,{onClick:()=>{
+          const data={logs:load(K.LOGS),exercises:load(K.EX),plans:load(K.PLANS),exportedAt:new Date().toISOString(),version:2};
+          const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+          const url=URL.createObjectURL(blob);
+          const a=document.createElement("a");
+          a.href=url;a.download="gymlogger-backup-"+new Date().toISOString().slice(0,10)+".json";
+          document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+        },full:true},"💾 "+S("Eksportuj dane","Export data")),
+        h(Btn,{onClick:()=>{
+          const inp=document.createElement("input");inp.type="file";inp.accept=".json";
+          inp.onchange=e=>{
+            const file=e.target.files[0];if(!file)return;
+            const reader=new FileReader();
+            reader.onload=ev=>{
+              try{
+                const data=JSON.parse(ev.target.result);
+                if(data.logs)save(K.LOGS,data.logs);
+                if(data.exercises)save(K.EX,data.exercises);
+                if(data.plans)save(K.PLANS,data.plans);
+                alert(S("Dane zaimportowane! Odśwież aplikację.","Data imported! Please refresh the app."));
+              }catch(err){alert(S("Błąd pliku JSON.","Invalid JSON file."));}
+            };
+            reader.readAsText(file);
+          };
+          document.body.appendChild(inp);inp.click();document.body.removeChild(inp);
+        },variant:"ghost",full:true},"📂 "+S("Importuj dane","Import data"))
+      ),
+      h("div",{style:{fontSize:11,color:C.muted}},S("⚠️ Import nadpisze istniejące dane.","⚠️ Import will overwrite existing data."))
+    ),
+
+    // API Key
+    h(Card,null,
+      h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:16,color:C.accent,marginBottom:12,letterSpacing:".06em"}},"AI COACH — API KEY"),
+      h("div",{style:{display:"flex",gap:8,marginBottom:8}},
+        h(Inp,{type:showKey?"text":"password",value:keyInput,onChange:setKeyInput,placeholder:"sk-ant-api03-…"}),
+        h("button",{onClick:()=>setShowKey(s=>!s),style:{background:C.surface,border:"1px solid "+C.border,borderRadius:7,padding:"0 12px",cursor:"pointer",color:C.muted2,fontSize:14}},showKey?"🙈":"👁")
+      ),
+      h(Btn,{onClick:saveKey,small:true,style:{background:keySaved?C.green:C.accent,color:C.accentTxt}},keySaved?"✓ "+S("Zapisano!","Saved!"):"💾 "+S("Zapisz klucz","Save key")),
+      h("div",{style:{fontSize:11,color:C.muted,marginTop:10}},"🔒 "+S("Klucz zapisany tylko lokalnie.","Key stored locally only."))
+    )
+  );
+}
+
+// ── Root ──────────────────────────────────────────────────────────────────────
+function App(){
+  const [isDark,setIsDark]=useState(()=>loadStr(K.THEME)!=="light");
+  const [lang,setLang]=useState(()=>loadStr(K.LANG)||"pl");
+  const [gyms,setGyms]=useState(()=>{const g=load(K.GYMS);return g&&g.length>0?g:DEFAULT_GYMS;});
+  const [tab,setTab]=useState("log");
+  const [logs,setLogs]=useState(()=>load(K.LOGS));
+  const [exercises,setExercises]=useState(()=>load(K.EX));
+  const [apiKey,setApiKey]=useState(()=>loadStr(K.APIKEY));
+  const C=isDark?DARK:LIGHT;
+  const TABS=lang==="en"?TABS_EN:TABS_PL;
+  const toggleTheme=()=>{const n=!isDark;setIsDark(n);saveStr(K.THEME,n?"dark":"light");};
+  const toggleLang=()=>{const n=lang==="pl"?"en":"pl";setLang(n);saveStr(K.LANG,n);};
+  const saveGyms=g=>{setGyms(g);save(K.GYMS,g);};
+  useEffect(()=>{document.body.style.background=C.bg;document.body.style.color=C.text;},[isDark]);
+  const saveLog=log=>{const u=[...logs,log];setLogs(u);save(K.LOGS,u);};
+  const delLog=id=>{const u=logs.filter(l=>l.id!==id);setLogs(u);save(K.LOGS,u);};
+  const savePlan=plan=>{const ex=load(K.PLANS);save(K.PLANS,[...ex,plan]);};
+
+  // Lifted LogTab state
+  const [logScreen,setLogScreen]=useState("start");
+  const [workoutStartTime,setWorkoutStartTime]=useState(null);
+  const [logDate,setLogDate]=useState(new Date().toISOString().slice(0,10));
+  const [logWname,setLogWname]=useState("");
+  const [logLoc,setLogLoc]=useState("free");
+  const [logRows,setLogRows]=useState([mkRow("free")]);
+  const [logSummary,setLogSummary]=useState(null);
+  const [logPrEvent,setLogPrEvent]=useState(null);
+  const [logSetCmts,setLogSetCmts]=useState({});
+  const [logLoadingCmt,setLogLoadingCmt]=useState({});
+  const [logCollapsed,setLogCollapsed]=useState({});
+  const [logShowHist,setLogShowHist]=useState({});
+  const [logFirstSug,setLogFirstSug]=useState({});
+  const [logLoadingFirstSug,setLogLoadingFirstSug]=useState({});
+  const [logDismissedSug,setLogDismissedSug]=useState({});
+  // Lifted AI state
+  const [aiMessages,setAiMessages]=useState([]);
+  const [aiPendingPlan,setAiPendingPlan]=useState(null);
+  const [aiPlanSaved,setAiPlanSaved]=useState(false);
+
+  const startWorkoutFromPlan=(plan)=>{
+    const newRows=(plan.exercises||[]).map(ex=>{
+      const found=exercises.find(e=>e.name.toLowerCase()===(ex.name||"").toLowerCase());
+      const numSets=parseInt(ex.sets)||3;
+      const sets=Array.from({length:numSets},mkSet);
+      return {...mkRow(logLoc),exId:found?found.id:null,customName:found?"":ex.name||"",sets,restSeconds:parseInt(ex.rest)||90};
+    });
+    setLogRows(newRows.length>0?newRows:[mkRow(logLoc)]);
+    setLogWname(plan.name||"");setLogSummary(null);setLogSetCmts({});setLogFirstSug({});setLogDismissedSug({});
+    setLogScreen("workout");setWorkoutStartTime(Date.now());setTab("log");
+  };
+
+  const weekVol=useMemo(()=>{
+    const ago=new Date();ago.setDate(ago.getDate()-7);
+    return logs.filter(l=>new Date(l.date)>=ago).reduce((s,l)=>s+(l.volume||(l.rows||[]).reduce((ss,r)=>ss+calcVol(r.sets||[]),0)),0);
+  },[logs]);
+
+  const logTabProps={
+    onSave:log=>{saveLog(log);setLogScreen("start");setWorkoutStartTime(null);},
+    exercises,logs,apiKey,onBack:()=>setLogScreen("start"),
+    date:logDate,setDate:setLogDate,wname:logWname,setWname:setLogWname,
+    loc:logLoc,setLoc:setLogLoc,rows:logRows,setRows:setLogRows,
+    summary:logSummary,setSummary:setLogSummary,
+    prEvent:logPrEvent,setPrEvent:setLogPrEvent,
+    setComments:logSetCmts,setSetComments:setLogSetCmts,
+    loadingCmt:logLoadingCmt,setLoadingCmt:setLogLoadingCmt,
+    collapsed:logCollapsed,setCollapsed:setLogCollapsed,
+    showHist:logShowHist,setShowHist:setLogShowHist,
+    firstSug:logFirstSug,setFirstSug:setLogFirstSug,
+    loadingFirstSug:logLoadingFirstSug,setLoadingFirstSug:setLogLoadingFirstSug,
+    dismissedSug:logDismissedSug,setDismissedSug:setLogDismissedSug
+  };
+
+  return h(Ctx.Provider,{value:{C,isDark,toggleTheme,gyms,lang}},
+    h("div",{style:{background:C.bg,minHeight:"100vh",color:C.text,maxWidth:600,margin:"0 auto",transition:"background .3s,color .3s"}},
+      h("div",{style:{paddingTop:"calc(env(safe-area-inset-top,0px) + 16px)",padding:"calc(env(safe-area-inset-top,0px) + 16px) 18px 0",borderBottom:"1px solid "+C.border,position:"sticky",top:0,background:C.bg,zIndex:50,transition:"background .3s"}},
+        h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:14}},
+          h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:30,color:C.accent,letterSpacing:".06em"}},"GYM"),
+          h("div",{style:{fontFamily:"'Bebas Neue',sans-serif",fontSize:30,color:C.text,letterSpacing:".06em"}},"LOGGER"),
+          weekVol>0&&h("div",{style:{fontSize:11,color:C.blue,marginLeft:4}},Math.round(weekVol/1000*10)/10+"t/7d"),
+          h("div",{style:{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}},
+            h("div",{style:{fontSize:11,color:C.muted}},logs.length+"tr"),
+            h("button",{onClick:toggleTheme,style:{background:C.surface,border:"1px solid "+C.border,borderRadius:8,padding:"6px 10px",cursor:"pointer",fontSize:15}},isDark?"☀️":"🌙")
+          )
+        ),
+        h("div",{style:{display:"flex",overflowX:"auto",gap:0}},
+          TABS.map(t=>h("button",{key:t.id,onClick:()=>setTab(t.id),style:{flexShrink:0,fontWeight:600,fontSize:10,letterSpacing:".07em",background:"none",border:"none",color:tab===t.id?C.accent:C.muted,padding:"8px 10px 10px",cursor:"pointer",borderBottom:"2px solid "+(tab===t.id?C.accent:"transparent"),transition:"all .15s"}},
+            h("div",{style:{fontSize:14,marginBottom:2}},t.icon),t.label
+          ))
+        )
+      ),
+      h("div",{style:{padding:"18px 18px 80px"}},
+        tab==="log"&&(logScreen==="start"
+          ?h(StartScreen,{plans:load(K.PLANS),exercises,onStartFree:()=>{setLogRows([mkRow(logLoc)]);setLogWname("");setLogSummary(null);setLogSetCmts({});setLogFirstSug({});setLogDismissedSug({});setLogScreen("workout");setWorkoutStartTime(Date.now());},onStartPlan:startWorkoutFromPlan})
+          :h(Fragment,null,
+              h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
+              h("button",{onClick:()=>{setLogScreen("start");setLogSummary(null);setWorkoutStartTime(null);},style:{fontSize:12,fontWeight:600,background:"transparent",border:"none",color:C.muted,cursor:"pointer",display:"flex",alignItems:"center",gap:4}},lang==="en"?"← Change workout":"← Zmień trening"),
+              h(WorkoutTimer,{startTime:workoutStartTime,lang})
+            ),
+              h(LogTab,logTabProps)
+            )
+        ),
+        tab==="ai"&&h(AICoachTab,{logs,exercises,setExercises,apiKey,setApiKey,onSavePlan:savePlan,messages:aiMessages,setMessages:setAiMessages,pendingPlan:aiPendingPlan,setPendingPlan:setAiPendingPlan,planSaved:aiPlanSaved,setPlanSaved:setAiPlanSaved}),
+        tab==="stats"&&h(StatsTab,{logs,exercises}),
+        tab==="exercises"&&h(ExercisesTab,{exercises,setExercises,logs}),
+        tab==="history"&&h(HistoryTab,{logs,onDelete:delLog,exercises}),
+        tab==="plans"&&h(PlansTab,{onStartWorkout:startWorkoutFromPlan,exercises}),
+        tab==="settings"&&h(SettingsTab,{gyms,onSaveGyms:saveGyms,isDark,toggleTheme,lang,toggleLang,apiKey,setApiKey})
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App,null));
+</script>
+</body>
+</html>
