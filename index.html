@@ -239,30 +239,54 @@ function PRBanner({exName,weight,onClose}){
 function RestTimer({autoStartRef}){
   const C=useC();
   const [preset,setPreset]=useState(90);
-  const [rem,setRem]=useState(90);
-  const [running,setRunning]=useState(false);
+  const [endTime,setEndTime]=useState(null); // timestamp when timer ends
   const [finished,setFinished]=useState(false);
   const [expanded,setExpanded]=useState(false);
-  const ref=useRef(null);
-  const go=useCallback(()=>{setFinished(false);setRunning(true);},[]);
-  const pause=()=>setRunning(false);
-  const reset=useCallback(()=>{setRunning(false);setFinished(false);setRem(preset);},[preset]);
-  useEffect(()=>{setRem(preset);setRunning(false);setFinished(false);},[preset]);
+  const [,tick]=useState(0);
+  const intervalRef=useRef(null);
+  const finishedRef=useRef(false);
+
+  // Calculate remaining from endTime
+  const running=endTime!==null&&!finished;
+  const rem=endTime?Math.max(0,Math.ceil((endTime-Date.now())/1000)):preset;
+  const pct2=Math.max(0,Math.min(1,rem/preset));
+
+  const fireAlarm=()=>{
+    if(navigator.vibrate)navigator.vibrate([300,100,300,100,500]);
+    try{const ac=new(window.AudioContext||window.webkitAudioContext)();
+      const bk=(f,s,d)=>{const o=ac.createOscillator(),g=ac.createGain();o.connect(g);g.connect(ac.destination);o.frequency.value=f;g.gain.setValueAtTime(0.4,ac.currentTime+s);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+s+d);o.start(ac.currentTime+s);o.stop(ac.currentTime+s+d+0.05);};
+      bk(880,0,.15);bk(880,.2,.15);bk(1100,.4,.3);}catch(e){}
+  };
+
   useEffect(()=>{
-    if(running){ref.current=setInterval(()=>setRem(r=>{if(r<=1){clearInterval(ref.current);setRunning(false);setFinished(true);
-            if(navigator.vibrate)navigator.vibrate([300,100,300,100,500]);
-            try{const ac=new(window.AudioContext||window.webkitAudioContext)();const bk=(f,s,d)=>{const o=ac.createOscillator(),g=ac.createGain();o.connect(g);g.connect(ac.destination);o.frequency.value=f;g.gain.setValueAtTime(0.4,ac.currentTime+s);g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+s+d);o.start(ac.currentTime+s);o.stop(ac.currentTime+s+d+0.05);};bk(880,0,.15);bk(880,.2,.15);bk(1100,.4,.3);}catch(e){}
-            return 0;}return r-1;}),1000);}
-    else clearInterval(ref.current);
-    return()=>clearInterval(ref.current);
-  },[running]);
+    if(!endTime)return;
+    finishedRef.current=false;
+    intervalRef.current=setInterval(()=>{
+      const left=endTime-Date.now();
+      if(left<=0&&!finishedRef.current){
+        finishedRef.current=true;
+        clearInterval(intervalRef.current);
+        setEndTime(null);
+        setFinished(true);
+        fireAlarm();
+      }
+      tick(n=>n+1);
+    },250); // check 4x/sec so it catches finish even if throttled
+    return()=>clearInterval(intervalRef.current);
+  },[endTime]);
+
+  const go=()=>{setFinished(false);setEndTime(Date.now()+preset*1000);};
+  const pause=()=>{setEndTime(null);};
+  const reset=()=>{setEndTime(null);setFinished(false);};
+  const changePreset=v=>{setPreset(v);setEndTime(null);setFinished(false);};
+
   useEffect(()=>{
     if(autoStartRef)autoStartRef.current=(seconds)=>{
       const s=seconds||preset;
-      setPreset(s);setRem(s);setFinished(false);setRunning(true);setExpanded(false);
+      setPreset(s);setFinished(false);setEndTime(Date.now()+s*1000);setExpanded(false);
     };
   },[autoStartRef,preset]);
-  const pct=rem/preset,R=18,circ=2*Math.PI*R;
+  const R=18,circ=2*Math.PI*R;
   const mm=String(Math.floor(rem/60)).padStart(2,"0"),ss=String(rem%60).padStart(2,"0");
   const col=finished?C.danger:running?C.accent:C.muted2;
   return h("div",{style:{background:C.card,border:"1px solid "+(finished?C.danger:running?C.accent:C.border2),borderRadius:12,padding:expanded?"14px 16px":"8px 14px",transition:"border-color .3s",marginBottom:16}},
@@ -270,7 +294,7 @@ function RestTimer({autoStartRef}){
       h("div",{style:{position:"relative",width:42,height:42,flexShrink:0}},
         h("svg",{width:42,height:42,style:{transform:"rotate(-90deg)"}},
           h("circle",{cx:21,cy:21,r:R,fill:"none",stroke:C.border,strokeWidth:3.5}),
-          h("circle",{cx:21,cy:21,r:R,fill:"none",stroke:col,strokeWidth:3.5,strokeDasharray:(circ*pct)+" "+circ,strokeLinecap:"round",style:{transition:"stroke-dasharray .9s linear,stroke .3s"}})
+          h("circle",{cx:21,cy:21,r:R,fill:"none",stroke:col,strokeWidth:3.5,strokeDasharray:(circ*pct2)+" "+circ,strokeLinecap:"round",style:{transition:"stroke-dasharray .9s linear,stroke .3s"}})
         ),
         finished&&h("div",{style:{position:"absolute",inset:0,borderRadius:"50%",border:"2px solid "+C.danger,animation:"pulse-ring 1s ease-out infinite"}}),
         h("div",{style:{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13}},"⏱")
@@ -289,8 +313,8 @@ function RestTimer({autoStartRef}){
     expanded&&h("div",{style:{marginTop:12}},
       h(Lbl,null,"Szybki wybór"),
       h("div",{style:{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}},
-        REST_OPTIONS.map(p=>h("button",{key:p,onClick:()=>setPreset(p),style:{fontWeight:600,fontSize:11,background:preset===p?C.accent:C.surface,color:preset===p?C.accentTxt:C.muted2,border:"1px solid "+(preset===p?C.accent:C.border),borderRadius:6,padding:"4px 11px",cursor:"pointer"}},restLabel(p))),
-        h(Inp,{type:"number",value:preset,onChange:v=>setPreset(Number(v)),placeholder:"sek",style:{width:70,padding:"4px 8px",fontSize:12}})
+        REST_OPTIONS.map(p=>h("button",{key:p,onClick:()=>changePreset(p),style:{fontWeight:600,fontSize:11,background:preset===p?C.accent:C.surface,color:preset===p?C.accentTxt:C.muted2,border:"1px solid "+(preset===p?C.accent:C.border),borderRadius:6,padding:"4px 11px",cursor:"pointer"}},restLabel(p))),
+        h(Inp,{type:"number",value:preset,onChange:v=>changePreset(Number(v)),placeholder:"sek",style:{width:70,padding:"4px 8px",fontSize:12}})
       )
     )
   );
@@ -379,11 +403,17 @@ function LogTab(p){
   const lang=useLang();
   const S=(p,e)=>lang==="en"?e:p;
 
-  // Auto-fetch first-set suggestions when rows with exId are loaded (e.g. from plan)
+  // Auto-fetch first-set suggestions + prefill sets when rows with exId are loaded (e.g. from plan)
   useEffect(()=>{
     rows.forEach(row=>{
-      if(row.exId&&apiKey&&!firstSug[row.id]&&!loadingFirstSug[row.id])
-        fetchFirstSug(row.id,row.exId,row.location);
+      if(row.exId){
+        // prefill sets from last session (only if sets are empty)
+        const allEmpty=row.sets.every(s=>!s.weight&&!s.reps);
+        if(allEmpty)prefillSets(row.id,row.exId,row.location);
+        // fetch AI suggestion
+        if(apiKey&&!firstSug[row.id]&&!loadingFirstSug[row.id])
+          fetchFirstSug(row.id,row.exId,row.location);
+      }
     });
   },[rows.map(r=>r.id+":"+(r.exId||"")).join(","),apiKey]);
 
@@ -393,6 +423,26 @@ function LogTab(p){
   const updRow=(rid,patch)=>setRows(r=>r.map(x=>x.id===rid?{...x,...patch}:x));
   const addRow=()=>setRows(r=>[...r,mkRow(loc)]);
   const delRow=rid=>setRows(r=>r.filter(x=>x.id!==rid));
+
+  const prefillSets=(rowId,exId,location)=>{
+    if(!exId)return;
+    const hist=getProgress(exId,logs,location);
+    if(!hist.length)return;
+    // get the most recent session's sets for this exercise
+    const lastPt=hist[hist.length-1];
+    if(!lastPt||!lastPt.sets||!lastPt.sets.length)return;
+    const lastSets=lastPt.sets.filter(s=>s.weight||s.reps);
+    if(!lastSets.length)return;
+    setRows(prev=>prev.map(r=>{
+      if(r.id!==rowId)return r;
+      // fill existing sets with last session values, cycling if needed
+      const newSets=r.sets.map((s,i)=>{
+        const ref=lastSets[Math.min(i,lastSets.length-1)];
+        return{...s,weight:ref.weight||s.weight,reps:ref.reps||s.reps};
+      });
+      return{...r,sets:newSets};
+    }));
+  };
 
   const fetchFirstSug=async(rowId,exId,location)=>{
     if(!apiKey||!exId||firstSug[rowId]||loadingFirstSug[rowId])return;
@@ -415,19 +465,8 @@ function LogTab(p){
     const wasAlreadyDone=currentSet.done;
     setRows(prev=>prev.map(r=>r.id!==rowId?r:{...r,sets:r.sets.map(s=>s.id!==setId?s:{...s,done:!s.done})}));
     if(wasAlreadyDone)return;
-    // auto-start timer
+    // auto-start timer only
     if(autoStartRef.current)autoStartRef.current(currentRow.restSeconds||90);
-    if(!apiKey)return;
-    const exName=getExName(currentRow,exercises);if(!exName)return;
-    const key=rowId+"_"+setId;if(setComments[key])return;
-    if(!currentSet.weight||!currentSet.reps){setSetComments(prev=>({...prev,[key]:"Wpisz ciężar i powtórzenia, żeby AI mógł skomentować serię."}));return;}
-    const hist=currentRow.exId?getProgress(currentRow.exId,logs,currentRow.location):[];
-    const prevSets=currentRow.sets.slice(0,si).filter(x=>x.weight&&x.reps);
-    setLoadingCmt(prev=>({...prev,[key]:true}));
-    const planReps2=currentRow.planReps||null;
-    try{const cmt=await aiSetComment(apiKey,exName,currentSet.weight,currentSet.reps,hist,prevSets,si+1,planReps2);setSetComments(prev=>({...prev,[key]:cmt}));}
-    catch(e){setSetComments(prev=>({...prev,[key]:"Błąd AI: "+e.message}));}
-    setLoadingCmt(prev=>({...prev,[key]:false}));
   };
 
   const handleSave=()=>{
@@ -535,8 +574,6 @@ function LogTab(p){
           ),
           // Sets
           row.sets.map((s,si)=>{
-            const key=row.id+"_"+s.id;
-            const cmt=setComments[key],loadingCmt2=loadingCmt[key];
             const isNewPR=parseFloat(s.weight)>oldPR&&oldPR>0&&parseFloat(s.weight)>0;
             return h(Fragment,{key:s.id},
               h("div",{style:{display:"grid",gridTemplateColumns:"36px 1fr 1fr 1fr 22px",gap:5,marginBottom:2,opacity:s.done?.55:1,transition:"opacity .2s"}},
@@ -548,18 +585,6 @@ function LogTab(p){
                 h(Inp,{value:s.note,onChange:v=>updSet(row.id,s.id,"note",v),placeholder:"–",style:{padding:"7px 8px"}}),
                 row.sets.length>1?h("button",{onClick:()=>delSet(row.id,s.id),style:{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:15}},"×"):h("span",null)
               ),
-              loadingCmt2&&h("div",{style:{padding:"5px 4px 5px 42px",display:"flex",alignItems:"center",gap:3,marginBottom:4}},h("span",{className:"dot",style:{background:C.accent}}),h("span",{className:"dot",style:{background:C.accent}}),h("span",{className:"dot",style:{background:C.accent}}),h("span",{style:{fontSize:11,color:C.muted,marginLeft:4}},"AI analizuje…")),
-              cmt&&(()=>{
-                const ck="cmt_"+key,isColl=collapsed[ck];
-                return h("div",{style:{marginBottom:6,animation:"float-in .3s ease"}},
-                  h("div",{onClick:()=>setCollapsed(c=>({...c,[ck]:!c[ck]})),style:{display:"flex",alignItems:"center",gap:6,cursor:"pointer",background:C.card,borderRadius:isColl?"8px":"8px 8px 0 0",padding:"6px 10px",border:"1px solid "+C.accent+"44",borderLeft:"3px solid "+C.accent}},
-                    h("span",{style:{fontSize:11,color:C.accent,fontWeight:700}},"🤖 AI Coach"),
-                    isColl&&h("span",{style:{fontSize:11,color:C.muted,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},cmt.slice(0,55)+"…"),
-                    h("span",{style:{fontSize:11,color:C.muted,marginLeft:"auto"}},isColl?"▼":"▲")
-                  ),
-                  !isColl&&h("div",{style:{fontSize:13,color:C.text,background:C.card,borderRadius:"0 0 8px 8px",padding:"8px 10px",border:"1px solid "+C.accent+"44",borderTop:"none",lineHeight:1.55}},cmt)
-                );
-              })(),
               isNewPR&&!s.done&&h("div",{style:{fontSize:11,color:C.accent,fontWeight:600,marginBottom:4,paddingLeft:42}},"🏆 Powyżej Twojego rekordu!")
             );
           })
@@ -971,12 +996,14 @@ function PlansTab({onStartWorkout,exercises}){
 // ── Workout Timer ────────────────────────────────────────────────────────────
 function WorkoutTimer({startTime,lang}){
   const C=useC();
-  const [elapsed,setElapsed]=useState(0);
+  // Calculate elapsed from startTime directly so tab switches don't reset
+  const [,forceUpdate]=useState(0);
   useEffect(()=>{
     if(!startTime)return;
-    const t=setInterval(()=>setElapsed(Math.floor((Date.now()-startTime)/1000)),1000);
+    const t=setInterval(()=>forceUpdate(n=>n+1),1000);
     return()=>clearInterval(t);
   },[startTime]);
+  const elapsed=startTime?Math.floor((Date.now()-startTime)/1000):0;
   if(!startTime)return null;
   const h2=Math.floor(elapsed/3600),m=Math.floor((elapsed%3600)/60),s=elapsed%60;
   const label=h2>0?h2+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"):String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
@@ -1127,7 +1154,10 @@ function App(){
 
   // Lifted LogTab state
   const [logScreen,setLogScreen]=useState("start");
+  const workoutStartTimeRef=useRef(null);
   const [workoutStartTime,setWorkoutStartTime]=useState(null);
+  const startTimer=()=>{const t=Date.now();workoutStartTimeRef.current=t;setWorkoutStartTime(t);};
+  const stopTimer=()=>{workoutStartTimeRef.current=null;stopTimer();};
   const [logDate,setLogDate]=useState(new Date().toISOString().slice(0,10));
   const [logWname,setLogWname]=useState("");
   const [logLoc,setLogLoc]=useState("free");
@@ -1155,7 +1185,7 @@ function App(){
     });
     setLogRows(newRows.length>0?newRows:[mkRow(logLoc)]);
     setLogWname(plan.name||"");setLogSummary(null);setLogSetCmts({});setLogFirstSug({});setLogDismissedSug({});
-    setLogScreen("workout");setWorkoutStartTime(Date.now());setTab("log");
+    setLogScreen("workout");startTimer();setTab("log");
   };
 
   const weekVol=useMemo(()=>{
@@ -1164,7 +1194,7 @@ function App(){
   },[logs]);
 
   const logTabProps={
-    onSave:log=>{saveLog(log);setLogScreen("start");setWorkoutStartTime(null);},
+    onSave:log=>{saveLog(log);setLogScreen("start");stopTimer();},
     exercises,logs,apiKey,onBack:()=>setLogScreen("start"),
     date:logDate,setDate:setLogDate,wname:logWname,setWname:setLogWname,
     loc:logLoc,setLoc:setLogLoc,rows:logRows,setRows:setLogRows,
@@ -1199,10 +1229,10 @@ function App(){
       ),
       h("div",{style:{padding:"18px 18px 80px"}},
         tab==="log"&&(logScreen==="start"
-          ?h(StartScreen,{plans:load(K.PLANS),exercises,onStartFree:()=>{setLogRows([mkRow(logLoc)]);setLogWname("");setLogSummary(null);setLogSetCmts({});setLogFirstSug({});setLogDismissedSug({});setLogScreen("workout");setWorkoutStartTime(Date.now());},onStartPlan:startWorkoutFromPlan})
+          ?h(StartScreen,{plans:load(K.PLANS),exercises,onStartFree:()=>{setLogRows([mkRow(logLoc)]);setLogWname("");setLogSummary(null);setLogSetCmts({});setLogFirstSug({});setLogDismissedSug({});setLogScreen("workout");startTimer();},onStartPlan:startWorkoutFromPlan})
           :h(Fragment,null,
               h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
-              h("button",{onClick:()=>{setLogScreen("start");setLogSummary(null);setWorkoutStartTime(null);},style:{fontSize:12,fontWeight:600,background:"transparent",border:"none",color:C.muted,cursor:"pointer",display:"flex",alignItems:"center",gap:4}},lang==="en"?"← Change workout":"← Zmień trening"),
+              h("button",{onClick:()=>{setLogScreen("start");setLogSummary(null);stopTimer();},style:{fontSize:12,fontWeight:600,background:"transparent",border:"none",color:C.muted,cursor:"pointer",display:"flex",alignItems:"center",gap:4}},lang==="en"?"← Change workout":"← Zmień trening"),
               h(WorkoutTimer,{startTime:workoutStartTime,lang})
             ),
               h(LogTab,logTabProps)
